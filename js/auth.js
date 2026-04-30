@@ -21,24 +21,55 @@ export const currentUser = {
   authReady: false
 };
 
+const PROFILE_LOAD_TIMEOUT_MS = 8000;
+
 const listeners = new Set();
 export function onUserChange(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
-function notify() { for (const fn of listeners) try { fn(currentUser); } catch (_) {} }
+function notify() { for (const fn of listeners) try { fn(currentUser); } catch (_) { } }
 
 export function isAdmin() { return !!(currentUser.isAdmin || currentUser.isSuperAdmin); }
 export function isAhmash() { return currentUser.role === "ahmash" || isAdmin(); }
 
-export async function loadUserProfile(fbUser) {
+function applyBaseUserState(fbUser) {
   currentUser.uid = fbUser.uid;
   currentUser.email = fbUser.email;
   currentUser.isSuperAdmin = isSuperAdminEmail(fbUser.email);
+}
+
+function applyFallbackProfile(fbUser) {
+  applyBaseUserState(fbUser);
+  currentUser.name = fbUser.displayName || fbUser.email || "משתמש";
+  currentUser.employeeNumber = "";
+  currentUser.role = currentUser.isSuperAdmin ? "ahmash" : "kabat";
+  currentUser.isAdmin = currentUser.isSuperAdmin;
+  currentUser.authReady = true;
+  notify();
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  let timerId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(label)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timerId) clearTimeout(timerId);
+  });
+}
+
+export async function loadUserProfile(fbUser) {
+  applyBaseUserState(fbUser);
 
   let profile = null;
   try {
-    const snap = await get(ref(db, `users/${fbUser.uid}`));
+    const snap = await withTimeout(
+      get(ref(db, `users/${fbUser.uid}`)),
+      PROFILE_LOAD_TIMEOUT_MS,
+      "Timed out while loading user profile"
+    );
     profile = snap.val();
   } catch (e) {
     console.warn("Could not read user profile:", e);
@@ -67,11 +98,25 @@ export function clearCurrentUser() {
 export function watchAuth(onSignedIn, onSignedOut) {
   onAuthStateChanged(auth, async (fbUser) => {
     if (fbUser) {
-      await loadUserProfile(fbUser);
-      onSignedIn && onSignedIn(currentUser);
+      try {
+        await loadUserProfile(fbUser);
+      } catch (e) {
+        console.error("[auth] failed to load profile, continuing with fallback state:", e);
+        applyFallbackProfile(fbUser);
+      }
+
+      try {
+        if (onSignedIn) await onSignedIn(currentUser);
+      } catch (e) {
+        console.error("[auth] signed-in handler failed:", e);
+      }
     } else {
       clearCurrentUser();
-      onSignedOut && onSignedOut();
+      try {
+        if (onSignedOut) onSignedOut();
+      } catch (e) {
+        console.error("[auth] signed-out handler failed:", e);
+      }
     }
   });
 }
