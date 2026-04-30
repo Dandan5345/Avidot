@@ -6,7 +6,7 @@ import { subscribeCollection } from "./firestoreStore.js";
 import { currentUser } from "./auth.js";
 import {
   escapeHtml, formatDateTime, nowAsLocalInputValue, toIsoFromLocalInput,
-  openModal, toast, filterItems, detailRows, confirmDialog
+  openModal, toast, filterItems, detailRows, confirmDialog, promptDialog
 } from "./utils.js";
 import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
 
@@ -48,6 +48,7 @@ export function renderAwaitingInfo(container) {
   const countLabel = container.querySelector("#countLabel");
   const searchInput = container.querySelector("#searchInput");
   const dateInput = container.querySelector("#dateInput");
+  const canDeleteItems = currentUser.role === "ahmash" || currentUser.isSuperAdmin;
 
   searchInput.addEventListener("input", () => { viewState.search = searchInput.value; render(); });
   dateInput.addEventListener("change", () => { viewState.date = dateInput.value; render(); });
@@ -102,7 +103,10 @@ export function renderAwaitingInfo(container) {
         <td>${escapeHtml(it.foundLocation || "")}</td>
         <td>${escapeHtml(it.currentLocation || "")}</td>
         <td>${escapeHtml(it.kabatHandler || "")}</td>
-        <td><button class="btn btn-sm btn-warn" data-action="transfer">↪️ העבר אבידה</button></td>
+        <td>
+          <button class="btn btn-sm btn-warn" data-action="transfer">↪️ העבר אבידה</button>
+          ${canDeleteItems ? `<button class="btn btn-sm btn-danger" data-action="delete-item">מחק אבידה</button>` : ""}
+        </td>
       </tr>
     `).join("");
 
@@ -114,6 +118,7 @@ export function renderAwaitingInfo(container) {
           e.stopPropagation();
           const it = allItems.find((x) => x.id === id);
           if (btn.dataset.action === "transfer") openTransferModal(it);
+          if (btn.dataset.action === "delete-item") onDeleteItem(it);
           return;
         }
         const it = allItems.find((x) => x.id === id);
@@ -128,6 +133,35 @@ export function teardownAwaitingInfo() {
   if (unsubscribe) {
     try { unsubscribe(); } catch (_) { }
     unsubscribe = null;
+  }
+}
+
+async function onDeleteItem(item) {
+  if (!item) return;
+  const ok1 = await confirmDialog({
+    title: "מחיקת אבידה",
+    message: `למחוק לצמיתות את אבידה מספר ${item.number}?`,
+    confirmText: "המשך",
+    cancelText: "ביטול",
+    danger: true
+  });
+  if (!ok1) return;
+
+  const ok2 = await promptDialog({
+    title: "אישור סופי",
+    label: 'הקלד "מחק" כדי לאשר את המחיקה',
+    placeholder: "מחק"
+  });
+  if ((ok2 || "").trim() !== "מחק") {
+    toast("המחיקה בוטלה", "error");
+    return;
+  }
+
+  try {
+    await deleteItem(COLLECTION, item.id);
+    toast("האבידה נמחקה", "success");
+  } catch (e) {
+    toast(e.message || "שגיאה במחיקה", "error");
   }
 }
 

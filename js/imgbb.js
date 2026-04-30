@@ -143,6 +143,13 @@ export function imageUploadFieldHtml(label = "תמונה (אופציונלי)") 
     <label class="field full upload-field">
       <span>${label}</span>
       <div class="upload-card">
+        <div class="upload-card-header">
+          <div class="upload-card-copy">
+            <span class="upload-chip">צילום מהיר</span>
+            <strong>הוסף תמונה בדרך שנוחה לך</strong>
+            <small>אפשר לצלם במקום או לבחור קובץ קיים מהטלפון, בלי לצאת מהטופס.</small>
+          </div>
+        </div>
         <input class="upload-input hidden" type="file" accept="image/*" />
         <div class="upload-source-actions">
           <button type="button" class="upload-choice primary" data-upload-source="camera">
@@ -155,6 +162,7 @@ export function imageUploadFieldHtml(label = "תמונה (אופציונלי)") 
           </button>
         </div>
         <div class="upload-preview-wrap">
+          <div class="upload-preview-glow"></div>
           <div class="upload-empty">
             <strong>עדיין לא נבחרה תמונה</strong>
             <span>אפשר לצלם במקום או לבחור תמונה קיימת.</span>

@@ -1,5 +1,5 @@
 // Page 4: פעולות אחמ"ש — משיכת / מחיקת אבידות
-// Operates only on regular lostItems that are not yet returned.
+// Operates on lostItems for donation lists or permanent deletion.
 import { fetchAllItems, deleteItem } from "./itemsCommon.js";
 import { isAhmash } from "./auth.js";
 import { escapeHtml, formatDateTime, formatDate, toast, confirmDialog } from "./utils.js";
@@ -60,7 +60,7 @@ async function onRun(container) {
   catch (e) { toast("שגיאה בטעינת אבידות", "error"); return; }
 
   const filtered = items.filter((it) => {
-    if (it.returned) return false;                  // only non-returned
+    if (action === "donation" && it.returned) return false;
     if (!includeValuable && it.valuable) return false;
     if (!it.dateTime) return false;
     const d = new Date(it.dateTime);
@@ -175,7 +175,7 @@ function renderDeleteView(container, items, opts) {
   }
   area.innerHTML = `
     <div class="section-card" style="background:#fef2f2;border-color:#fecaca">
-      <strong style="color:#991b1b">⚠️ עומדות להימחק ${items.length} אבידות מטווח ${escapeHtml(formatDate(opts.from))} עד ${escapeHtml(formatDate(opts.to))} ${opts.includeValuable ? "(כולל יקרות ערך)" : ""}</strong>
+      <strong style="color:#991b1b">⚠️ עומדות להימחק ${items.length} אבידות מטווח ${escapeHtml(formatDate(opts.from))} עד ${escapeHtml(formatDate(opts.to))} ${opts.includeValuable ? "(כולל יקרות ערך)" : ""}, כולל אבידות שהוחזרו אם הן בטווח</strong>
     </div>
     ${tableHtml(items)}
     <div style="display:flex;justify-content:flex-end;margin-top:14px">

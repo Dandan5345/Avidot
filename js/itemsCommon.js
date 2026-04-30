@@ -46,7 +46,22 @@ export async function deleteItem(collectionName, id) {
 }
 
 export async function findItemsByNumber(collectionName, number) {
-  return findDocumentsByField(collectionName, "number", Number(number));
+  const normalizedTarget = normalizeItemNumber(number);
+  if (normalizedTarget === null) return [];
+
+  const numericMatches = await findDocumentsByField(collectionName, "number", normalizedTarget);
+  if (numericMatches.length) return numericMatches;
+
+  const stringMatches = await findDocumentsByField(collectionName, "number", String(normalizedTarget));
+  if (stringMatches.length) return stringMatches;
+
+  const items = await fetchAllItems(collectionName);
+  return items.filter((item) => normalizeItemNumber(item.number) === normalizedTarget);
+}
+
+function normalizeItemNumber(value) {
+  const normalized = Number(String(value ?? "").trim());
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
 }
 
 // ===== Item details modal =====

@@ -103,14 +103,15 @@ function renderTable(tbody) {
     return;
   }
 
-  if (!allUsers.length) {
+  const visibleUsers = allUsers.filter((u) => !isSuperAdminEmail(u.email));
+
+  if (!visibleUsers.length) {
     tbody.innerHTML = `<tr><td colspan="7" class="empty">אין משתמשים</td></tr>`;
     return;
   }
-  // sort: super admin first, then admins, then by name
-  const sorted = allUsers.slice().sort((a, b) => {
-    const aS = isSuperAdminEmail(a.email) ? 0 : (a.isAdmin ? 1 : 2);
-    const bS = isSuperAdminEmail(b.email) ? 0 : (b.isAdmin ? 1 : 2);
+  const sorted = visibleUsers.slice().sort((a, b) => {
+    const aS = a.isAdmin ? 0 : 1;
+    const bS = b.isAdmin ? 0 : 1;
     if (aS !== bS) return aS - bS;
     return (a.name || "").localeCompare(b.name || "", "he");
   });
@@ -131,6 +132,7 @@ function renderTable(tbody) {
         <td>${escapeHtml(u.createdAt ? formatDateTime(u.createdAt) : "")}</td>
         <td>
           ${superAdmin ? '<span class="muted">מוגן</span>' : `
+            <button class="btn btn-sm" data-action="edit">ערוך</button>
             <button class="btn btn-sm btn-outline" data-action="toggleAdmin">${u.isAdmin ? "הורד הרשאת מנהל" : "הפוך למנהל"}</button>
             <button class="btn btn-sm btn-secondary" data-action="resetPwd">אפס סיסמה</button>
             <button class="btn btn-sm btn-danger" data-action="delete">מחק</button>
@@ -146,6 +148,7 @@ function renderTable(tbody) {
         e.stopPropagation();
         const u = allUsers.find((x) => x.uid === uid);
         if (!u) return;
+        if (btn.dataset.action === "edit") openEditUserModal(u);
         if (btn.dataset.action === "toggleAdmin") onToggleAdmin(u);
         if (btn.dataset.action === "delete") onDelete(u);
         if (btn.dataset.action === "resetPwd") onResetPassword(u);
@@ -155,77 +158,153 @@ function renderTable(tbody) {
 }
 
 function openAddUserModal() {
-  const m = openModal({
+  openUserModal({
     title: "הוסף משתמש חדש",
-    bodyHtml: `
-      <form>
-        <div class="form-grid">
-          <label class="field"><span>שם העובד</span>
-            <input type="text" id="u_name" required /></label>
-          <label class="field"><span>מספר עובד</span>
-            <input type="text" id="u_emp" /></label>
-          <label class="field"><span>אימייל</span>
-            <input type="email" id="u_email" required /></label>
-          <label class="field"><span>סיסמה (לפחות 6 תווים)</span>
-            <input type="password" id="u_pwd" required minlength="6" /></label>
-          <label class="field"><span>תפקיד</span>
-            <select id="u_role">
-              <option value="kabat">קב"ט</option>
-              <option value="ahmash">אחמ"ש</option>
-            </select></label>
-          <label class="checkbox-row full">
-            <input type="checkbox" id="u_admin" /><span>סטטוס מנהל</span></label>
-        </div>
-      </form>`,
+    submitLabel: "צור משתמש",
+    submitId: "createUserBtn",
+    requirePassword: true,
+    onSubmit: async ({ body, close, button }) => {
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner"></span> יוצר...`;
+      try {
+        const form = readUserForm(body, { requirePassword: true });
+        const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
+        const newUid = cred.user.uid;
+
+        await createDocument(COLLECTION, {
+          name: form.name,
+          employeeNumber: form.employeeNumber,
+          email: form.email,
+          role: form.role,
+          isAdmin: form.isAdmin || isSuperAdminEmail(form.email),
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser.uid
+        }, newUid);
+
+        try { await secondarySignOut(secondaryAuth); } catch (_) { }
+
+        toast("המשתמש נוצר בהצלחה", "success");
+        close();
+      } catch (e) {
+        console.error(e);
+        let msg = e.message || "שגיאה ביצירת המשתמש";
+        if (e.code === "auth/email-already-in-use") msg = "האימייל כבר רשום במערכת";
+        else if (e.code === "auth/invalid-email") msg = "אימייל לא תקין";
+        else if (e.code === "auth/weak-password") msg = "סיסמה חלשה מדי";
+        toast(msg, "error");
+        button.disabled = false;
+        button.textContent = "צור משתמש";
+      }
+    }
+  });
+}
+
+function openEditUserModal(user) {
+  openUserModal({
+    title: `עריכת משתמש: ${user.name || user.email}`,
+    submitLabel: "שמור שינויים",
+    submitId: "saveUserBtn",
+    requirePassword: false,
+    user,
+    onSubmit: async ({ body, close, button }) => {
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner"></span> שומר...`;
+      try {
+        const form = readUserForm(body, { requirePassword: false });
+        if (user.isAdmin && !form.isAdmin && adminCount() <= 1 && !currentUser.isSuperAdmin) {
+          throw new Error("לא ניתן להוריד את המנהל האחרון במערכת");
+        }
+        await updateDocument(COLLECTION, user.uid, {
+          name: form.name,
+          employeeNumber: form.employeeNumber,
+          role: form.role,
+          isAdmin: form.isAdmin,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser.uid
+        });
+        toast("פרטי המשתמש עודכנו", "success");
+        if (user.uid === currentUser.uid) {
+          toast("שינויים בהרשאות או בתפקיד יופיעו במלואם לאחר התחברות מחדש", "info", 4200);
+        }
+        close();
+      } catch (e) {
+        toast(e.message || "שגיאה בעדכון המשתמש", "error");
+        button.disabled = false;
+        button.textContent = "שמור שינויים";
+      }
+    }
+  });
+}
+
+function openUserModal({ title, submitLabel, submitId, requirePassword, user = null, onSubmit }) {
+  openModal({
+    title,
+    large: true,
+    bodyHtml: userFormHtml({ user, requirePassword }),
     footerButtons: [
       { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
       {
-        label: "צור משתמש", className: "btn-success", id: "createUserBtn", onClick: async ({ body, close }) => {
-          const btn = document.getElementById("createUserBtn");
-          btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> יוצר...`;
-          try {
-            const name = body.querySelector("#u_name").value.trim();
-            const employeeNumber = body.querySelector("#u_emp").value.trim();
-            const email = body.querySelector("#u_email").value.trim();
-            const password = body.querySelector("#u_pwd").value;
-            const role = body.querySelector("#u_role").value;
-            const wantsAdmin = body.querySelector("#u_admin").checked;
-            if (!name || !email || !password) throw new Error("יש למלא את כל שדות החובה");
-            if (password.length < 6) throw new Error("סיסמה חייבת להיות לפחות 6 תווים");
-
-            // Create on secondary auth so the current admin stays signed in.
-            const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-            const newUid = cred.user.uid;
-
-            const profile = {
-              name,
-              employeeNumber,
-              email,
-              role,
-              isAdmin: !!wantsAdmin || isSuperAdminEmail(email),
-              createdAt: new Date().toISOString(),
-              createdBy: currentUser.uid
-            };
-            await createDocument(COLLECTION, profile, newUid);
-
-            // Sign the secondary instance out so it doesn't keep that session.
-            try { await secondarySignOut(secondaryAuth); } catch (_) { }
-
-            toast("המשתמש נוצר בהצלחה", "success");
-            close();
-          } catch (e) {
-            console.error(e);
-            let msg = e.message || "שגיאה ביצירת המשתמש";
-            if (e.code === "auth/email-already-in-use") msg = "האימייל כבר רשום במערכת";
-            else if (e.code === "auth/invalid-email") msg = "אימייל לא תקין";
-            else if (e.code === "auth/weak-password") msg = "סיסמה חלשה מדי";
-            toast(msg, "error");
-            btn.disabled = false; btn.textContent = "צור משתמש";
-          }
+        label: submitLabel,
+        className: "btn-success",
+        id: submitId,
+        onClick: async ({ body, close }) => {
+          const button = document.getElementById(submitId);
+          await onSubmit({ body, close, button });
         }
       }
     ]
   });
+}
+
+function userFormHtml({ user = null, requirePassword }) {
+  return `
+    <form class="user-form">
+      <div class="modal-note">
+        <strong>${user ? "עדכון פרטי משתמש" : "יצירת משתמש חדש"}</strong>
+        <span>${user ? "אפשר לעדכן שם, תפקיד, מספר עובד והרשאות. האימייל נשאר לקריאה בלבד כדי לא לשבור את ההתחברות." : "צור משתמש חדש עם פרטים מלאים והרשאות מתאימות."}</span>
+      </div>
+      <div class="form-grid compact-grid">
+        <label class="field"><span>שם העובד</span>
+          <input type="text" id="u_name" value="${escapeHtml(user?.name || "")}" required /></label>
+        <label class="field"><span>מספר עובד</span>
+          <input type="text" id="u_emp" value="${escapeHtml(user?.employeeNumber || "")}" /></label>
+        <label class="field full"><span>אימייל</span>
+          <input type="email" id="u_email" value="${escapeHtml(user?.email || "")}" ${user ? "disabled" : "required"} />
+          ${user ? '<small class="field-note">שינוי אימייל דורש עדכון גם ב-Firebase Authentication ולכן חסום כאן.</small>' : ""}
+        </label>
+        ${requirePassword ? `
+          <label class="field full"><span>סיסמה (לפחות 6 תווים)</span>
+            <input type="password" id="u_pwd" required minlength="6" /></label>` : ""}
+        <label class="field"><span>תפקיד</span>
+          <select id="u_role">
+            <option value="kabat" ${user?.role === "kabat" ? "selected" : ""}>קב"ט</option>
+            <option value="ahmash" ${user?.role === "ahmash" ? "selected" : ""}>אחמ"ש</option>
+          </select></label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="u_admin" ${user?.isAdmin ? "checked" : ""} />
+          <span>סטטוס מנהל</span></label>
+      </div>
+    </form>`;
+}
+
+function readUserForm(body, { requirePassword }) {
+  const name = body.querySelector("#u_name").value.trim();
+  const employeeNumber = body.querySelector("#u_emp").value.trim();
+  const emailField = body.querySelector("#u_email");
+  const email = emailField ? emailField.value.trim() : "";
+  const role = body.querySelector("#u_role").value;
+  const isAdmin = body.querySelector("#u_admin").checked;
+  const password = requirePassword ? body.querySelector("#u_pwd").value : "";
+
+  if (!name) throw new Error("יש למלא שם עובד");
+  if (!role) throw new Error("יש לבחור תפקיד");
+  if (requirePassword) {
+    if (!email) throw new Error("יש למלא אימייל");
+    if (!password) throw new Error("יש למלא סיסמה");
+    if (password.length < 6) throw new Error("סיסמה חייבת להיות לפחות 6 תווים");
+  }
+
+  return { name, employeeNumber, email, role, isAdmin, password };
 }
 
 async function onToggleAdmin(u) {
