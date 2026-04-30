@@ -20,6 +20,8 @@ const homeBtn = document.getElementById("homeBtn");
 let currentTeardown = null;
 let isSignedIn = false;
 
+appEl.innerHTML = `<div class="section-card"><p>טוען...</p></div>`;
+
 function currentRoute() {
   const h = location.hash || "";
   return h.startsWith("#") ? h.slice(1) : h;
@@ -34,7 +36,7 @@ function navigate() {
   if (rawRoute === "/manager-actions" && !isAhmash()) { location.hash = "#/home"; return; }
 
   // teardown previous
-  if (currentTeardown) { try { currentTeardown(); } catch (_) {} currentTeardown = null; }
+  if (currentTeardown) { try { currentTeardown(); } catch (_) { } currentTeardown = null; }
 
   // Explicit dispatch: never invoke a function from a user-controlled lookup
   // on a regular object (avoids any prototype-pollution / unexpected-call risks).
@@ -71,10 +73,23 @@ function navigate() {
   }
 }
 
-window.addEventListener("hashchange", navigate);
+function showRouteError(error) {
+  console.error("[router] failed to render route:", error);
+  appEl.innerHTML = `<div class="section-card"><h3>שגיאה בטעינת הדף</h3><pre>${(error && error.message) || error}</pre></div>`;
+}
+
+function safeNavigate() {
+  try {
+    navigate();
+  } catch (error) {
+    showRouteError(error);
+  }
+}
+
+window.addEventListener("hashchange", safeNavigate);
 
 logoutBtn.addEventListener("click", async () => {
-  if (currentTeardown) { try { currentTeardown(); } catch (_) {} currentTeardown = null; }
+  if (currentTeardown) { try { currentTeardown(); } catch (_) { } currentTeardown = null; }
   await logout();
 });
 homeBtn.addEventListener("click", () => { location.hash = "#/home"; });
@@ -86,29 +101,26 @@ watchAuth(
     topbarEl.classList.remove("hidden");
     userInfoEl.innerHTML = userDisplayLabel();
 
-    // Auto-provision the super admin's user profile so they always appear
-    // in the admin panel and have isAdmin set, even before any /users record.
-    if (auth.currentUser) {
-      try { await ensureSuperAdminProfile(auth.currentUser); }
-      catch (e) { console.warn("[auth] ensureSuperAdminProfile failed:", e); }
-    }
-
     try {
       if (!location.hash || location.hash === "#" || location.hash === "#/login") {
-        if (location.hash === "#/home") navigate();
-        else location.hash = "#/home";
-      } else {
-        navigate();
+        location.hash = "#/home";
       }
+      safeNavigate();
     } catch (e) {
-      console.error("[auth] navigate after sign-in failed:", e);
-      appEl.innerHTML = `<div class="section-card"><h3>שגיאה בטעינת הדף</h3><pre>${(e && e.message) || e}</pre></div>`;
+      showRouteError(e);
+    }
+
+    // Auto-provision the super admin profile in the background. This must not
+    // block navigation, because a slow database request would leave the app blank.
+    if (auth.currentUser) {
+      ensureSuperAdminProfile(auth.currentUser)
+        .catch((e) => console.warn("[auth] ensureSuperAdminProfile failed:", e));
     }
   },
   () => {
     isSignedIn = false;
     topbarEl.classList.add("hidden");
-    if (currentTeardown) { try { currentTeardown(); } catch (_) {} currentTeardown = null; }
+    if (currentTeardown) { try { currentTeardown(); } catch (_) { } currentTeardown = null; }
     renderLogin(appEl);
   }
 );
