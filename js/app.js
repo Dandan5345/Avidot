@@ -9,6 +9,7 @@ import { renderPendingPickup, teardownPendingPickup } from "./pendingPickup.js";
 import { renderAwaitingInfo, teardownAwaitingInfo } from "./awaitingInfo.js";
 import { renderManagerActions } from "./managerActions.js";
 import { renderUsers, teardownUsers, ensureSuperAdminProfile } from "./users.js";
+import { renderActivityLogsPage, teardownActivityLogsPage } from "./activityLogsPage.js";
 import { isAdmin, isAhmash } from "./auth.js";
 
 const appEl = document.getElementById("app");
@@ -33,6 +34,7 @@ function navigate() {
 
   // Permission gates
   if (rawRoute === "/users" && !isAdmin()) { location.hash = "#/home"; return; }
+  if (rawRoute === "/activity-log" && !isAdmin()) { location.hash = "#/home"; return; }
   if (rawRoute === "/manager-actions" && !isAhmash()) { location.hash = "#/home"; return; }
 
   // teardown previous
@@ -67,6 +69,10 @@ function navigate() {
       renderUsers(appEl);
       currentTeardown = teardownUsers;
       break;
+    case "/activity-log":
+      renderActivityLogsPage(appEl);
+      currentTeardown = teardownActivityLogsPage;
+      break;
     default:
       renderHome(appEl);
       currentTeardown = null;
@@ -92,7 +98,7 @@ onUserChange(() => {
   if (!isSignedIn || !auth.currentUser) return;
 
   const route = currentRoute() || "/home";
-  if (route === "/home" || route === "/users" || route === "/manager-actions") {
+  if (route === "/home" || route === "/users" || route === "/activity-log" || route === "/manager-actions") {
     safeNavigate();
   }
 });

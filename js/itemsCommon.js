@@ -80,6 +80,7 @@ export function openItemDetailsModal({ title, item, extraRows = [], footerButton
     { label: "פרטים נוספים", value: item.additionalDetails },
     { label: "שם בעל האבידה", value: item.ownerName },
     { label: "טלפון בעלים", value: item.ownerPhone },
+    { label: "תעודת זהות", value: item.ownerId },
     {
       label: "סטטוס", value: item.returned
         ? `<span class="badge green">הוחזרה</span>`
@@ -118,9 +119,19 @@ export function openReturnDetailsModal(item) {
     { label: "קב\"ט שטיפל בהחזרה", value: rd.handlerName },
     { label: "תאריך החזרה", value: formatDateTime(rd.returnedAt) }
   ];
+  let bodyHtml = `<div>${detailRows(rows)}</div>`;
+  if (rd.signatureUrl) {
+    bodyHtml += `
+      <div class="detail-photo signature-photo">
+        <div class="signature-photo-label">חתימת בעל האבידה</div>
+        <a href="${escapeHtml(rd.signatureUrl)}" target="_blank" rel="noopener">
+          <img src="${escapeHtml(rd.signatureUrl)}" alt="חתימת בעל האבידה" />
+        </a>
+      </div>`;
+  }
   return openModal({
     title: "פרטי החזרה",
-    bodyHtml: `<div>${detailRows(rows)}</div>`,
+    bodyHtml,
     footerButtons: [{ label: "סגור", className: "btn-secondary", onClick: ({ close }) => close() }]
   });
 }

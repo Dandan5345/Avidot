@@ -2,6 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+import { getFunctions } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-functions.js";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyCnDspKbDjH50B9mIFlOfGnHFpNCT4ux20",
@@ -17,6 +18,7 @@ export const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functionsClient = getFunctions(app);
 
 // Secondary app instance — used when admins create new users so the
 // admin's session is not replaced by the newly-created user.

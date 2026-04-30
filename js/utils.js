@@ -36,6 +36,124 @@ export function nowAsLocalInputValue() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+let signaturePadLibraryPromise = null;
+
+export function signaturePadHtml({
+  idPrefix = "signature",
+  title = "חתימת בעל האבידה",
+  description = "בעל האבידה חותם כאן עם האצבע, עט מגע או העכבר לפני אישור ההחזרה."
+} = {}) {
+  return `
+    <div class="signature-card full">
+      <div class="signature-card-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(description)}</span>
+      </div>
+      <div class="signature-pad-shell">
+        <canvas id="${escapeHtml(idPrefix)}_canvas" class="signature-canvas"></canvas>
+        <div id="${escapeHtml(idPrefix)}_placeholder" class="signature-placeholder">חתמו כאן בתוך המסגרת</div>
+      </div>
+      <div class="signature-actions">
+        <button type="button" class="btn btn-sm btn-outline" id="${escapeHtml(idPrefix)}_clear">נקה חתימה</button>
+      </div>
+    </div>`;
+}
+
+export async function createSignaturePadController(root, { idPrefix = "signature" } = {}) {
+  const SignaturePad = await loadSignaturePadLibrary();
+  const canvas = root.querySelector(`#${idPrefix}_canvas`);
+  const clearButton = root.querySelector(`#${idPrefix}_clear`);
+  const placeholder = root.querySelector(`#${idPrefix}_placeholder`);
+  if (!canvas || !clearButton) throw new Error("אזור החתימה לא נטען כראוי");
+
+  const signaturePad = new SignaturePad(canvas, {
+    penColor: "#235b74",
+    minWidth: 0.9,
+    maxWidth: 2.2,
+    backgroundColor: "rgba(255,255,255,0)"
+  });
+
+  const syncPlaceholder = () => {
+    if (!placeholder) return;
+    placeholder.classList.toggle("hidden", !signaturePad.isEmpty());
+  };
+
+  const resizeCanvas = () => {
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(Math.floor(rect.width * ratio), 1);
+    canvas.height = Math.max(Math.floor(rect.height * ratio), 1);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(ratio, ratio);
+    signaturePad.clear();
+    syncPlaceholder();
+  };
+
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+  clearButton.addEventListener("click", () => {
+    signaturePad.clear();
+    syncPlaceholder();
+  });
+  canvas.addEventListener("pointerup", syncPlaceholder);
+  canvas.addEventListener("mouseleave", syncPlaceholder);
+  canvas.addEventListener("touchend", syncPlaceholder, { passive: true });
+
+  return {
+    isEmpty() {
+      return signaturePad.isEmpty();
+    },
+    async toBlob(type = "image/png") {
+      return await canvasToBlob(canvas, type);
+    },
+    destroy() {
+      window.removeEventListener("resize", resizeCanvas);
+    }
+  };
+}
+
+async function loadSignaturePadLibrary() {
+  if (window.SignaturePad) return window.SignaturePad;
+  if (signaturePadLibraryPromise) return signaturePadLibraryPromise;
+
+  signaturePadLibraryPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-signature-pad="true"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.SignaturePad), { once: true });
+      existing.addEventListener("error", () => reject(new Error("טעינת ספריית החתימה נכשלה")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/signature_pad@4.2.0/dist/signature_pad.umd.min.js";
+    script.async = true;
+    script.dataset.signaturePad = "true";
+    script.onload = () => {
+      if (!window.SignaturePad) {
+        reject(new Error("ספריית החתימה לא זמינה"));
+        return;
+      }
+      resolve(window.SignaturePad);
+    };
+    script.onerror = () => reject(new Error("טעינת ספריית החתימה נכשלה"));
+    document.head.appendChild(script);
+  });
+
+  return signaturePadLibraryPromise;
+}
+
+function canvasToBlob(canvas, type = "image/png") {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("לא ניתן לייצר תמונת חתימה"));
+        return;
+      }
+      resolve(blob);
+    }, type);
+  });
+}
+
 export function toIsoFromLocalInput(value) {
   if (!value) return null;
   const d = new Date(value);

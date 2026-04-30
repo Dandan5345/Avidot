@@ -1,34 +1,6 @@
 {
   "rules": {
-    "users": {
-      ".read":  "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
-      ".write": "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
-      ".indexOn": ["email", "role", "isAdmin"],
-
-      "$uid": {
-        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
-        ".write": "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true || (auth.uid == $uid && !data.exists()))"
-      }
-    },
-
-    "lostItems": {
-      ".read":  "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["itemNumber", "createdAt", "returned"]
-    },
-    "pendingPickup": {
-      ".read":  "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["itemNumber", "createdAt", "returned"]
-    },
-    "awaitingInfo": {
-      ".read":  "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["itemNumber", "createdAt"]
-    },
-    "counters": {
-      ".read":  "auth != null",
-      ".write": "auth != null"
-    }
+    ".read": "auth != null",
+    ".write": "auth != null"
   }
 }

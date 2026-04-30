@@ -7,9 +7,11 @@ import { subscribeCollection } from "./firestoreStore.js";
 import { currentUser } from "./auth.js";
 import {
   escapeHtml, formatDateTime, nowAsLocalInputValue, toIsoFromLocalInput,
-  openModal, toast, filterItems, promptDialog, detailRows, confirmDialog
+  openModal, toast, filterItems, promptDialog, detailRows, confirmDialog,
+  signaturePadHtml, createSignaturePadController
 } from "./utils.js";
-import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
+import { attachImageUpload, imageUploadFieldHtml, uploadImageToImgBB } from "./imgbb.js";
+import { collectionLabel, logActivitySafe } from "./activityLog.js";
 
 const COLLECTION = "lostItems";
 const STORAGE_OPTIONS = [
@@ -37,6 +39,11 @@ export function renderLostItems(container) {
       </div>
     </div>
 
+    <div class="page-guide section-card guide-accent-cyan">
+      <strong>מתי משתמשים בעמוד הזה?</strong>
+      <p>כאן רושמים את כל האבידות שאין דרך לדבר עם בעל האבידה, לדוגמה: אבידות שנמצאו בלובי או בחדר אוכל, אבידות מחדרים שמספר הטלפון לא עובד או שאין מספר טלפון, וכדומה.</p>
+    </div>
+
     <div class="toolbar">
       <input type="text" id="searchInput" placeholder="🔍 חיפוש..." />
       <input type="date" id="dateInput" title="סינון לפי תאריך" />
@@ -50,7 +57,7 @@ export function renderLostItems(container) {
     </div>
 
     <div class="table-wrap">
-      <table class="data">
+      <table class="data responsive-table">
         <thead>
           <tr>
             <th>מס׳ אבידה</th>
@@ -131,15 +138,16 @@ export function renderLostItems(container) {
     }
     tbody.innerHTML = items.map((it) => `
       <tr data-id="${escapeHtml(it.id)}" class="${it.returned ? "returned" : ""}">
-        <td>${escapeHtml(it.number)}</td>
-        <td>${escapeHtml(formatDateTime(it.dateTime))}</td>
-        <td>${escapeHtml(it.description || "")} ${it.valuable ? '<span class="badge purple">יקרת ערך</span>' : ""}</td>
-        <td>${escapeHtml(it.foundLocation || "")}</td>
-        <td>${escapeHtml(it.storageLocation === "אחר" ? (it.storageOther || "אחר") : (it.storageLocation || ""))}</td>
-        <td>${escapeHtml(it.kabatHandler || "")}</td>
-        <td>${it.returned ? '<span class="badge green">הוחזרה</span>' : '<span class="badge amber">פעילה</span>'}</td>
-        <td>
+        <td data-label="מס׳ אבידה">${escapeHtml(it.number)}</td>
+        <td data-label="תאריך">${escapeHtml(formatDateTime(it.dateTime))}</td>
+        <td data-label="תיאור">${escapeHtml(it.description || "")} ${it.valuable ? '<span class="badge purple">יקרת ערך</span>' : ""}</td>
+        <td data-label="איפה נמצא">${escapeHtml(it.foundLocation || "")}</td>
+        <td data-label="אחסון">${escapeHtml(it.storageLocation === "אחר" ? (it.storageOther || "אחר") : (it.storageLocation || ""))}</td>
+        <td data-label="קב״ט מטפל">${escapeHtml(it.kabatHandler || "")}</td>
+        <td data-label="סטטוס">${it.returned ? '<span class="badge green">הוחזרה</span>' : '<span class="badge amber">פעילה</span>'}</td>
+        <td data-label="פעולות" class="actions-cell">
           ${it.returned ? `<button class="btn btn-sm btn-outline" data-action="return-info">פרטי החזרה</button>` : ""}
+          ${!it.returned ? `<button class="btn btn-sm btn-outline" data-action="move-to-pending">העבר אבידה</button>` : ""}
           ${canDeleteItems ? `<button class="btn btn-sm btn-danger" data-action="delete-item">מחק אבידה</button>` : ""}
         </td>
       </tr>
@@ -154,6 +162,7 @@ export function renderLostItems(container) {
           e.stopPropagation();
           const it = allItems.find((x) => x.id === id);
           if (btn.dataset.action === "return-info") openReturnDetailsModal(it);
+          if (btn.dataset.action === "move-to-pending") openTransferToPending(it);
           if (btn.dataset.action === "delete-item") onDeleteItem(it);
           return;
         }
@@ -205,6 +214,18 @@ async function onDeleteItem(item) {
 
   try {
     await deleteItem(COLLECTION, item.id);
+    void logActivitySafe({
+      action: "item.delete.lost",
+      entityType: "item",
+      entityId: item.id,
+      itemNumber: item.number,
+      summary: `${actorLabel()} מחק את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
+      detailLines: [
+        `תיאור: ${item.description || "ללא תיאור"}`,
+        `מקום מציאה: ${item.foundLocation || "לא צוין"}`
+      ],
+      metadata: { sourceCollection: COLLECTION }
+    });
     toast("האבידה נמחקה", "success");
   } catch (e) {
     toast(e.message || "שגיאה במחיקה", "error");
@@ -224,18 +245,25 @@ async function openAddModal({ prefill = null } = {}) {
     large: true,
     bodyHtml: `
       <form id="addForm">
+        <div class="modal-note">
+          <strong>רישום אבידה חדשה</strong>
+          <span>מלאו רק פרטים ידועים ומדויקים. אם אין דרך ליצור קשר עם בעל האבידה, זה המקום הנכון לפתוח את הרשומה.</span>
+        </div>
         <div class="form-grid">
           <label class="field">
             <span>מספר אבידה</span>
-            <input type="number" id="f_number" value="${suggestedNumber}" required />
+            <input type="number" id="f_number" value="${escapeHtml(String(prefill && prefill.number ? prefill.number : suggestedNumber))}" required />
+            <small class="field-note">מספר פנימי לזיהוי האבידה במערכת. אפשר להשאיר את המספר שהמערכת הציעה.</small>
           </label>
           <label class="field">
             <span>תאריך ושעה</span>
             <input type="datetime-local" id="f_dateTime" value="${prefill && prefill.dateTime ? toLocalInput(prefill.dateTime) : nowAsLocalInputValue()}" required />
+            <small class="field-note">מתי האבידה נמצאה או התקבלה אצלכם בפועל.</small>
           </label>
           <label class="field full">
             <span>תיאור פריט</span>
             <textarea id="f_description" required>${escapeHtml(prefill && prefill.description || "")}</textarea>
+            <small class="field-note">תארו בקצרה אבל בצורה שמאפשרת לזהות את הפריט בקלות: צבע, סוג, מותג או סימן מזהה.</small>
           </label>
           <label class="checkbox-row full">
             <input type="checkbox" id="f_valuable" ${prefill && prefill.valuable ? "checked" : ""} />
@@ -244,22 +272,27 @@ async function openAddModal({ prefill = null } = {}) {
           <label class="field">
             <span>איפה נמצא</span>
             <input type="text" id="f_foundLocation" value="${escapeHtml(prefill && prefill.foundLocation || "")}" required />
+            <small class="field-note">למשל: לובי, חדר אוכל, מסדרון קומה 4, חדר 512.</small>
           </label>
           <label class="field">
             <span>איפה מאוחסן</span>
             <select id="f_storageLocation" required>${storageOpts}</select>
+            <small class="field-note">בחרו את המקום שבו הפריט נשמר כרגע עד להמשך טיפול.</small>
           </label>
           <label class="field full" id="f_storageOtherWrap" style="display:none">
             <span>פירוט מיקום אחסון</span>
             <input type="text" id="f_storageOther" />
+            <small class="field-note">אם בחרתם "אחר", ציינו בדיוק איפה הפריט מונח.</small>
           </label>
           <label class="field">
             <span>שם המוצא</span>
             <input type="text" id="f_finderName" value="${escapeHtml(prefill && prefill.finderName || "")}" />
+            <small class="field-note">שם העובד או האורח שמצא את האבידה, אם הוא ידוע.</small>
           </label>
           <label class="field">
             <span>מחלקת המוצא</span>
             <input type="text" id="f_finderDept" value="${escapeHtml(prefill && prefill.finderDept || "")}" />
+            <small class="field-note">המחלקה או הצוות שאליו שייך מי שמצא את הפריט.</small>
           </label>
           <label class="checkbox-row full">
             <input type="checkbox" id="f_finderUnknown" ${prefill && prefill.finderUnknown ? "checked" : ""} />
@@ -268,6 +301,7 @@ async function openAddModal({ prefill = null } = {}) {
           <label class="field full">
             <span>הקב"ט המטפל</span>
             <input type="text" id="f_kabatHandler" value="${escapeHtml(prefill && prefill.kabatHandler || currentUser.name || "")}" required />
+            <small class="field-note">מי אחראי על המשך הטיפול והרישום של האבידה.</small>
           </label>
           ${imageUploadFieldHtml("תמונת אבידה (אופציונלי)")}
         </div>
@@ -351,9 +385,45 @@ async function openAddModal({ prefill = null } = {}) {
 
       // If we arrived from transfer flow, delete the source item.
       if (prefill && prefill.__sourceCollection && prefill.__sourceId) {
+        let sourceDeleteFailed = false;
         try {
           await deleteItem(prefill.__sourceCollection, prefill.__sourceId);
-        } catch (e) { console.warn("Failed to delete source item:", e); }
+        } catch (e) {
+          sourceDeleteFailed = true;
+          console.warn("Failed to delete source item:", e);
+        }
+
+        void logActivitySafe({
+          action: prefill.__sourceCollection === "awaitingInfo" ? "item.transfer.awaiting_to_lost" : "item.transfer.other_to_lost",
+          entityType: "item",
+          itemNumber: number,
+          summary: sourceDeleteFailed
+            ? `${actorLabel()} יצר את אבידה מספר ${number} בדף ${collectionLabel(COLLECTION)}, אבל המחיקה מ-${collectionLabel(prefill.__sourceCollection)} נכשלה`
+            : `${actorLabel()} העביר את אבידה מספר ${number} מ-${collectionLabel(prefill.__sourceCollection)} ל-${collectionLabel(COLLECTION)}`,
+          detailLines: [
+            `תיאור: ${description}`,
+            `מקום מציאה: ${foundLocation || "לא צוין"}`,
+            `קב"ט מטפל: ${kabatHandler}`
+          ],
+          metadata: {
+            sourceCollection: prefill.__sourceCollection,
+            sourceId: prefill.__sourceId,
+            targetCollection: COLLECTION
+          }
+        });
+      } else {
+        void logActivitySafe({
+          action: "item.create.lost",
+          entityType: "item",
+          itemNumber: number,
+          summary: `${actorLabel()} יצר אבידה חדשה בדף ${collectionLabel(COLLECTION)}`,
+          detailLines: [
+            `מספר אבידה: ${number}`,
+            `תיאור: ${description}`,
+            `מקום מציאה: ${foundLocation || "לא צוין"}`
+          ],
+          metadata: { targetCollection: COLLECTION }
+        });
       }
 
       toast("האבידה נוספה בהצלחה", "success");
@@ -400,6 +470,14 @@ async function openReturnFlow() {
 
 function chooseAmongMatches(matches) {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value, closeModal = false) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+      if (closeModal) m.close();
+    };
+
     const html = `
       <p class="muted">נמצאו מספר אבידות עם אותו המספר. בחר את האבידה הנכונה:</p>
       <div class="table-wrap">
@@ -421,14 +499,13 @@ function chooseAmongMatches(matches) {
       title: "פתרון קונפליקט",
       large: true,
       bodyHtml: html,
-      footerButtons: [{ label: "ביטול", className: "btn-secondary", onClick: ({ close }) => { close(); resolve(null); } }],
-      onClose: () => resolve(null)
+      footerButtons: [{ label: "ביטול", className: "btn-secondary", onClick: () => finish(null, true) }],
+      onClose: () => finish(null)
     });
     m.body.querySelectorAll("button[data-id]").forEach((b) => {
       b.addEventListener("click", () => {
         const it = matches.find((x) => x.id === b.dataset.id);
-        m.close();
-        resolve(it);
+        finish(it, true);
       });
     });
   });
@@ -444,6 +521,10 @@ function openReturnFormModal(item) {
   const m = openModal({
     title: "פרטי החזרה",
     bodyHtml: `
+      <div class="modal-note">
+        <strong>השלמת החזרת האבידה</strong>
+        <span>מלאו את פרטי המקבל, אשרו מי טיפל בהחזרה, ואספו גם חתימה דיגיטלית של בעל האבידה לפני שמירה.</span>
+      </div>
       <div class="section-card" style="background:#eff6ff;border-color:#bfdbfe">
         <div class="muted" style="margin-bottom:6px;font-weight:600;color:#1e3a8a">פרטי האבידה:</div>
         ${summaryRows}
@@ -452,15 +533,19 @@ function openReturnFormModal(item) {
         <label class="field full">
           <span>שם מלא של המקבל</span>
           <input type="text" id="r_receiverName" required />
+          <small class="field-note">רשמו את שם האדם שמקבל פיזית את האבידה לידיים.</small>
         </label>
         <label class="field full">
           <span>טלפון או תעודת זהות של המקבל</span>
           <input type="text" id="r_receiverContact" required />
+          <small class="field-note">אפשר להזין טלפון זמין או תעודת זהות לצורך תיעוד ברור של המסירה.</small>
         </label>
         <label class="field full">
           <span>שם הקב"ט שטיפל בהחזרה</span>
           <input type="text" id="r_handlerName" value="${escapeHtml(currentUser.name || "")}" required />
+          <small class="field-note">רשמו את שם איש הצוות שאישר ומסר את הפריט.</small>
         </label>
+        ${signaturePadHtml({ idPrefix: "lostReturnSignature" })}
       </div>
     `,
     footerButtons: [
@@ -472,15 +557,36 @@ function openReturnFormModal(item) {
           const handlerName = body.querySelector("#r_handlerName").value.trim();
           if (!receiverName || !receiverContact || !handlerName) { toast("יש למלא את כל השדות", "error"); return; }
           try {
+            if (!signatureController || signatureController.isEmpty()) {
+              toast("יש לאסוף חתימה דיגיטלית של בעל האבידה", "error");
+              return;
+            }
+            const signatureBlob = await signatureController.toBlob();
+            const signatureUrl = await uploadImageToImgBB(signatureBlob);
             await updateItem(COLLECTION, item.id, {
               returned: true,
               returnDetails: {
                 receiverName, receiverContact, handlerName,
                 returnedAt: new Date().toISOString(),
-                returnedBy: currentUser.uid || null
+                returnedBy: currentUser.uid || null,
+                signatureUrl
               }
             });
+            void logActivitySafe({
+              action: "item.return.lost",
+              entityType: "item",
+              entityId: item.id,
+              itemNumber: item.number,
+              summary: `${actorLabel()} החזיר את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
+              detailLines: [
+                `המקבל: ${receiverName}`,
+                `זיהוי מקבל: ${receiverContact}`,
+                `קב"ט שטיפל: ${handlerName}`
+              ],
+              metadata: { sourceCollection: COLLECTION }
+            });
             toast("האבידה סומנה כהוחזרה", "success");
+            signatureController?.destroy();
             close();
           } catch (e) {
             toast(e.message || "שגיאה בשמירה", "error");
@@ -489,4 +595,43 @@ function openReturnFormModal(item) {
       }
     ]
   });
+
+  let signatureController = null;
+  createSignaturePadController(m.body, { idPrefix: "lostReturnSignature" })
+    .then((controller) => { signatureController = controller; })
+    .catch((error) => toast(error.message || "שגיאה בטעינת החתימה", "error"));
+
+  const baseClose = m.close;
+  m.close = () => {
+    signatureController?.destroy();
+    baseClose();
+  };
+}
+
+function openTransferToPending(item) {
+  if (!item || item.returned) return;
+  const transferData = {
+    number: item.number,
+    dateTime: item.dateTime,
+    description: item.description,
+    valuable: !!item.valuable,
+    foundLocation: item.foundLocation,
+    finderName: item.finderName,
+    finderDept: item.finderDept,
+    kabatHandler: item.kabatHandler,
+    currentLocation: item.storageLocation === "אחר" ? (item.storageOther || "") : (item.storageLocation || ""),
+    additionalDetails: item.additionalDetails || "",
+    ownerName: item.ownerName || "",
+    ownerPhone: item.ownerPhone || "",
+    ownerId: item.ownerId || "",
+    photoUrl: item.photoUrl,
+    __sourceCollection: COLLECTION,
+    __sourceId: item.id
+  };
+  sessionStorage.setItem("transferToPendingPickup", JSON.stringify(transferData));
+  location.hash = "#/pending-pickup";
+}
+
+function actorLabel() {
+  return currentUser.name || currentUser.email || "משתמש";
 }

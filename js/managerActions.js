@@ -1,8 +1,11 @@
 // Page 4: פעולות אחמ"ש — משיכת / מחיקת אבידות
 // Operates on lostItems for donation lists or permanent deletion.
-import { fetchAllItems, deleteItem } from "./itemsCommon.js";
+import { fetchAllItems } from "./itemsCommon.js";
 import { isAhmash } from "./auth.js";
 import { escapeHtml, formatDateTime, formatDate, toast, confirmDialog } from "./utils.js";
+import { currentUser } from "./auth.js";
+import { logActivitySafe } from "./activityLog.js";
+import { deleteDocumentsBatch } from "./firestoreStore.js";
 
 const COLLECTION = "lostItems";
 let lastFiltered = [];
@@ -203,12 +206,47 @@ function renderDeleteView(container, items, opts) {
     const btn = area.querySelector("#confirmDeleteBtn");
     btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> מוחק...`;
     let failed = 0;
-    for (const it of items) {
-      try { await deleteItem(COLLECTION, it.id); }
-      catch (e) { failed++; console.error(e); }
+    const chunks = chunkItems(items, 450);
+    const deletedItems = [];
+
+    for (const chunk of chunks) {
+      try {
+        await deleteDocumentsBatch(COLLECTION, chunk.map((item) => item.id));
+        deletedItems.push(...chunk);
+      } catch (error) {
+        failed += chunk.length;
+        console.error(error);
+      }
     }
+
+    deletedItems.forEach((it) => {
+      void logActivitySafe({
+        action: "item.delete.bulk_manager",
+        entityType: "item",
+        entityId: it.id,
+        itemNumber: it.number,
+        summary: `${actorLabel()} מחק את אבידה מספר ${it.number} דרך פעולת אחמ"ש`,
+        detailLines: [
+          `תיאור: ${it.description || "ללא תיאור"}`,
+          `תאריך: ${formatDateTime(it.dateTime)}`
+        ]
+      });
+    });
+
     if (failed) toast(`נמחקו ${items.length - failed} מתוך ${items.length}. ${failed} נכשלו.`, "error");
     else toast(`נמחקו ${items.length} אבידות`, "success");
     area.innerHTML = `<div class="section-card"><p>הפעולה הסתיימה.</p></div>`;
   });
+}
+
+function chunkItems(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function actorLabel() {
+  return currentUser.name || currentUser.email || "משתמש";
 }

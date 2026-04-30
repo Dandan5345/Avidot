@@ -12,7 +12,7 @@ export function renderHome(container) {
           <div class="hero-content">
             <h2>ברוכים הבאים, ${escapeName(currentUser.name)}</h2>
             <p>מערכת ניהול אבידות ומציאות – ביטחון מלון ממילא</p>
-            ${showAdmin ? `<div class="hero-actions"><button id="usersBtn" class="btn btn-outline-light">👥 ניהול משתמשים</button></div>` : ""}
+            ${showAdmin ? `<div class="hero-actions"><button id="usersBtn" class="btn btn-outline-light">👥 ניהול משתמשים</button><button id="logBtn" class="btn btn-outline-light">📜 LOG</button></div>` : ""}
           </div>
         </div>
       </div>
@@ -37,6 +37,13 @@ export function renderHome(container) {
             <h3>שמחכות למידע</h3>
             <p>אבידות הממתינות להשלמת פרטים</p>
           </div>
+          ${showAdmin ? `
+            <div class="home-card modern-card admin-log-card" data-route="activity-log">
+              <span class="home-card-tag">בקרת ניהול</span>
+              <div class="icon-wrap"><div class="icon">📜</div></div>
+              <h3>LOG</h3>
+              <p>יומן שינויים מלא לפי משתמש, זמן ופעולה</p>
+            </div>` : ""}
           ${showAhmash ? `
             <div class="home-card modern-card ahmash-card" data-route="manager-actions">
               <span class="home-card-tag">ניהול אחמ"ש</span>
@@ -57,6 +64,8 @@ export function renderHome(container) {
 
   const usersBtn = container.querySelector("#usersBtn");
   if (usersBtn) usersBtn.addEventListener("click", () => { location.hash = "#/users"; });
+  const logBtn = container.querySelector("#logBtn");
+  if (logBtn) logBtn.addEventListener("click", () => { location.hash = "#/activity-log"; });
 }
 
 function escapeName(s) {

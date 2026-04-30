@@ -9,6 +9,7 @@ import {
   openModal, toast, filterItems, detailRows, confirmDialog, promptDialog
 } from "./utils.js";
 import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
+import { collectionLabel, logActivitySafe } from "./activityLog.js";
 
 const COLLECTION = "awaitingInfo";
 let unsubscribe = null;
@@ -26,6 +27,10 @@ export function renderAwaitingInfo(container) {
         <button id="addBtn" class="btn">➕ הוסף אבידה</button>
       </div>
     </div>
+    <div class="page-guide section-card guide-accent-amber">
+      <strong>מתי משתמשים בעמוד הזה?</strong>
+      <p>כאן יהיו כל האבידות שממתינות למידע, למשל אורח שלא הצלחנו ליצור איתו קשר וננסה ליצור שוב בהמשך, בעל אבידה שאמר שהוא בודק מה לעשות עם האבידה, או סוכן נסיעות שבודק מול בעלי האבידה. נשאף תמיד שהאבידות ישארו כאן מקסימום יומיים.</p>
+    </div>
     <div class="toolbar">
       <input type="text" id="searchInput" placeholder="🔍 חיפוש..." />
       <input type="date" id="dateInput" />
@@ -34,12 +39,12 @@ export function renderAwaitingInfo(container) {
       <span class="muted" id="countLabel"></span>
     </div>
     <div class="table-wrap">
-      <table class="data">
+      <table class="data responsive-table">
         <thead><tr>
           <th>מס׳</th><th>תאריך</th><th>תיאור</th><th>איפה נמצא</th>
-          <th>מיקום נוכחי</th><th>קב״ט מטפל</th><th>פעולות</th>
+          <th>איש קשר</th><th>טלפון</th><th>מיקום נוכחי</th><th>קב״ט מטפל</th><th>פעולות</th>
         </tr></thead>
-        <tbody id="tbody"><tr><td colspan="7" class="empty">טוען...</td></tr></tbody>
+        <tbody id="tbody"><tr><td colspan="9" class="empty">טוען...</td></tr></tbody>
       </table>
     </div>
   `;
@@ -83,7 +88,7 @@ export function renderAwaitingInfo(container) {
 
   function render() {
     if (loadError && !hasLoadedSnapshot) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(loadError)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(loadError)}</td></tr>`;
       countLabel.textContent = "";
       return;
     }
@@ -92,18 +97,20 @@ export function renderAwaitingInfo(container) {
     items.sort((a, b) => (Number(b.number) || 0) - (Number(a.number) || 0));
     countLabel.textContent = `${items.length} פריטים`;
     if (!items.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">אין רשומות להצגה</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">אין רשומות להצגה</td></tr>`;
       return;
     }
     tbody.innerHTML = items.map((it) => `
       <tr data-id="${escapeHtml(it.id)}">
-        <td>${escapeHtml(it.number)}</td>
-        <td>${escapeHtml(formatDateTime(it.dateTime))}</td>
-        <td>${escapeHtml(it.description || "")} ${it.valuable ? '<span class="badge purple">יקרת ערך</span>' : ""}</td>
-        <td>${escapeHtml(it.foundLocation || "")}</td>
-        <td>${escapeHtml(it.currentLocation || "")}</td>
-        <td>${escapeHtml(it.kabatHandler || "")}</td>
-        <td>
+        <td data-label="מס׳">${escapeHtml(it.number)}</td>
+        <td data-label="תאריך">${escapeHtml(formatDateTime(it.dateTime))}</td>
+        <td data-label="תיאור">${escapeHtml(it.description || "")} ${it.valuable ? '<span class="badge purple">יקרת ערך</span>' : ""}</td>
+        <td data-label="איפה נמצא">${escapeHtml(it.foundLocation || "")}</td>
+        <td data-label="איש קשר">${escapeHtml(it.ownerName || "")}</td>
+        <td data-label="טלפון">${escapeHtml(it.ownerPhone || "")}</td>
+        <td data-label="מיקום נוכחי">${escapeHtml(it.currentLocation || "")}</td>
+        <td data-label="קב״ט מטפל">${escapeHtml(it.kabatHandler || "")}</td>
+        <td data-label="פעולות" class="actions-cell">
           <button class="btn btn-sm btn-warn" data-action="transfer">↪️ העבר אבידה</button>
           ${canDeleteItems ? `<button class="btn btn-sm btn-danger" data-action="delete-item">מחק אבידה</button>` : ""}
         </td>
@@ -159,6 +166,18 @@ async function onDeleteItem(item) {
 
   try {
     await deleteItem(COLLECTION, item.id);
+    void logActivitySafe({
+      action: "item.delete.awaiting_info",
+      entityType: "item",
+      entityId: item.id,
+      itemNumber: item.number,
+      summary: `${actorLabel()} מחק את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
+      detailLines: [
+        `תיאור: ${item.description || "ללא תיאור"}`,
+        `מקום מציאה: ${item.foundLocation || "לא צוין"}`
+      ],
+      metadata: { sourceCollection: COLLECTION }
+    });
     toast("האבידה נמחקה", "success");
   } catch (e) {
     toast(e.message || "שגיאה במחיקה", "error");
@@ -174,27 +193,46 @@ async function openAddModal() {
     large: true,
     bodyHtml: `
       <form>
+        <div class="modal-note">
+          <strong>רישום אבידה שממתינה להמשך מידע</strong>
+          <span>רושמים כאן רק פריטים שעדיין חסר עליהם מידע או החלטה. המטרה היא לא להשאיר אותם בסטטוס הזה יותר מיומיים.</span>
+        </div>
         <div class="form-grid">
           <label class="field"><span>מספר אבידה</span>
-            <input type="number" id="f_number" value="${suggestedNumber}" required /></label>
+            <input type="number" id="f_number" value="${suggestedNumber}" required />
+            <small class="field-note">מספר זיהוי פנימי לאבידה במערכת.</small></label>
           <label class="field"><span>תאריך ושעה</span>
-            <input type="datetime-local" id="f_dateTime" value="${nowAsLocalInputValue()}" required /></label>
+            <input type="datetime-local" id="f_dateTime" value="${nowAsLocalInputValue()}" required />
+            <small class="field-note">מתי האבידה נמצאה או מתי הוחלט להעביר אותה להמתנה למידע.</small></label>
           <label class="field full"><span>פירוט</span>
-            <textarea id="f_description" required></textarea></label>
+            <textarea id="f_description" required></textarea>
+            <small class="field-note">מהו הפריט, איך הוא נראה, ואיזה סימן מזהה בולט יש לו.</small></label>
           <label class="checkbox-row full">
             <input type="checkbox" id="f_valuable" /><span>אבידת יקרת ערך</span></label>
           <label class="field"><span>איפה זה נמצא</span>
-            <input type="text" id="f_foundLocation" required /></label>
+            <input type="text" id="f_foundLocation" required />
+            <small class="field-note">המקום שבו הפריט נמצא במקור.</small></label>
           <label class="field"><span>הקב"ט המטפל</span>
-            <input type="text" id="f_kabatHandler" value="${escapeHtml(currentUser.name || "")}" required /></label>
+            <input type="text" id="f_kabatHandler" value="${escapeHtml(currentUser.name || "")}" required />
+            <small class="field-note">מי אחראי לעקוב אחרי המידע החסר ולסגור את הטיפול.</small></label>
           <label class="field"><span>שם המוצא</span>
-            <input type="text" id="f_finderName" /></label>
+            <input type="text" id="f_finderName" />
+            <small class="field-note">מי מצא את הפריט, אם המידע קיים.</small></label>
           <label class="field"><span>מחלקת המוצא</span>
-            <input type="text" id="f_finderDept" /></label>
+            <input type="text" id="f_finderDept" />
+            <small class="field-note">באיזו מחלקה או צוות נמצא מי שמצא את האבידה.</small></label>
+          <label class="field"><span>שם בעל האבידה / איש קשר</span>
+            <input type="text" id="f_ownerName" />
+            <small class="field-note">אם יש לכם שם של בעל האבידה או של איש קשר רלוונטי, הזינו אותו כאן.</small></label>
+          <label class="field"><span>טלפון בעל האבידה / איש קשר</span>
+            <input type="tel" id="f_ownerPhone" />
+            <small class="field-note">מספר טלפון לחזרה אם כבר יש דרך התקשרות.</small></label>
           <label class="field full"><span>איפה האבידה כרגע</span>
-            <input type="text" id="f_currentLocation" required /></label>
+            <input type="text" id="f_currentLocation" required />
+            <small class="field-note">המיקום הנוכחי של הפריט עד לקבלת החלטה או מידע נוסף.</small></label>
           <label class="field full"><span>פירוט נוסף</span>
-            <textarea id="f_additionalDetails"></textarea></label>
+            <textarea id="f_additionalDetails"></textarea>
+            <small class="field-note">כתבו כאן למה המידע חסר ומה השלב הבא המתוכנן.</small></label>
           ${imageUploadFieldHtml("תמונת אבידה (אופציונלי)")}
         </div>
       </form>`,
@@ -236,6 +274,8 @@ async function openAddModal() {
         foundLocation: body.querySelector("#f_foundLocation").value.trim(),
         finderName: body.querySelector("#f_finderName").value.trim(),
         finderDept: body.querySelector("#f_finderDept").value.trim(),
+        ownerName: body.querySelector("#f_ownerName").value.trim(),
+        ownerPhone: body.querySelector("#f_ownerPhone").value.trim(),
         kabatHandler: body.querySelector("#f_kabatHandler").value.trim(),
         currentLocation: body.querySelector("#f_currentLocation").value.trim(),
         additionalDetails: body.querySelector("#f_additionalDetails").value.trim(),
@@ -245,6 +285,20 @@ async function openAddModal() {
         createdByName: currentUser.name || ""
       };
       await createItem(COLLECTION, payload);
+      void logActivitySafe({
+        action: "item.create.awaiting_info",
+        entityType: "item",
+        itemNumber: number,
+        summary: `${actorLabel()} יצר אבידה חדשה בדף ${collectionLabel(COLLECTION)}`,
+        detailLines: [
+          `מספר אבידה: ${number}`,
+          `תיאור: ${description}`,
+          `מיקום נוכחי: ${payload.currentLocation || "לא צוין"}`,
+          `איש קשר: ${payload.ownerName || "לא צוין"}`,
+          `טלפון: ${payload.ownerPhone || "לא צוין"}`
+        ],
+        metadata: { targetCollection: COLLECTION }
+      });
       toast("האבידה נוספה בהצלחה", "success");
       close();
     } catch (e) {
@@ -261,6 +315,8 @@ function openTransferModal(item) {
     { label: "תאריך", value: formatDateTime(item.dateTime) },
     { label: "תיאור", value: item.description },
     { label: "איפה נמצא", value: item.foundLocation },
+    { label: "איש קשר", value: item.ownerName },
+    { label: "טלפון", value: item.ownerPhone },
     { label: "מיקום נוכחי", value: item.currentLocation }
   ]);
 
@@ -281,12 +337,15 @@ function openTransferModal(item) {
 
   m.body.querySelector("#toLost").addEventListener("click", () => {
     const data = {
+      number: item.number,
       dateTime: item.dateTime,
       description: item.description,
       valuable: !!item.valuable,
       foundLocation: item.foundLocation,
       finderName: item.finderName,
       finderDept: item.finderDept,
+      ownerName: item.ownerName,
+      ownerPhone: item.ownerPhone,
       kabatHandler: item.kabatHandler,
       photoUrl: item.photoUrl,
       __sourceCollection: COLLECTION,
@@ -298,12 +357,15 @@ function openTransferModal(item) {
   });
   m.body.querySelector("#toPending").addEventListener("click", () => {
     const data = {
+      number: item.number,
       dateTime: item.dateTime,
       description: item.description,
       valuable: !!item.valuable,
       foundLocation: item.foundLocation,
       finderName: item.finderName,
       finderDept: item.finderDept,
+      ownerName: item.ownerName,
+      ownerPhone: item.ownerPhone,
       kabatHandler: item.kabatHandler,
       currentLocation: item.currentLocation,
       additionalDetails: item.additionalDetails,
@@ -315,4 +377,8 @@ function openTransferModal(item) {
     m.close();
     location.hash = "#/pending-pickup";
   });
+}
+
+function actorLabel() {
+  return currentUser.name || currentUser.email || "משתמש";
 }

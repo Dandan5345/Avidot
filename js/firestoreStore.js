@@ -10,6 +10,7 @@ import {
     runTransaction,
     setDoc,
     updateDoc,
+    writeBatch,
     where
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 import { db } from "./firebase.js";
@@ -61,6 +62,17 @@ export async function updateDocument(collectionName, id, patch) {
 
 export async function deleteDocument(collectionName, id) {
     await deleteDoc(doc(db, collectionName, id));
+}
+
+export async function deleteDocumentsBatch(collectionName, ids) {
+    const uniqueIds = Array.from(new Set((ids || []).filter(Boolean)));
+    if (!uniqueIds.length) return;
+
+    const batch = writeBatch(db);
+    uniqueIds.forEach((id) => {
+        batch.delete(doc(db, collectionName, id));
+    });
+    await batch.commit();
 }
 
 export async function findDocumentsByField(collectionName, fieldName, value) {
