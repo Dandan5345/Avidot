@@ -17,6 +17,9 @@ import {
 const COLLECTION = "users";
 let unsubscribe = null;
 let allUsers = [];
+let hasLoadedSnapshot = false;
+let loadError = "";
+let initialLoadTimer = null;
 
 export function renderUsers(container) {
   if (!isAdmin()) {
@@ -53,16 +56,35 @@ export function renderUsers(container) {
 
   container.querySelector("#addUserBtn").addEventListener("click", () => openAddUserModal());
 
+  loadError = "";
+  clearTimeout(initialLoadTimer);
+  initialLoadTimer = setTimeout(() => {
+    if (!hasLoadedSnapshot) {
+      loadError = "אין תגובה ממסד הנתונים. בדוק את הגדרות Firebase Realtime Database.";
+      renderTable(container.querySelector("#usersTbody"));
+    }
+  }, 5000);
+
   unsubscribe = onValue(ref(db, COLLECTION), (snap) => {
+    clearTimeout(initialLoadTimer);
     const v = snap.val() || {};
     allUsers = Object.entries(v).map(([uid, val]) => ({ uid, ...val }));
+    hasLoadedSnapshot = true;
+    loadError = "";
+    renderTable(container.querySelector("#usersTbody"));
+  }, (error) => {
+    clearTimeout(initialLoadTimer);
+    loadError = error?.message || "שגיאה בטעינת הנתונים";
     renderTable(container.querySelector("#usersTbody"));
   });
+
+  if (hasLoadedSnapshot) renderTable(container.querySelector("#usersTbody"));
 }
 
 export function teardownUsers() {
+  clearTimeout(initialLoadTimer);
   if (unsubscribe) {
-    try { unsubscribe(); } catch (_) {}
+    try { unsubscribe(); } catch (_) { }
     unsubscribe = null;
   }
 }
@@ -72,6 +94,11 @@ function adminCount() {
 }
 
 function renderTable(tbody) {
+  if (loadError && !hasLoadedSnapshot) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(loadError)}</td></tr>`;
+    return;
+  }
+
   if (!allUsers.length) {
     tbody.innerHTML = `<tr><td colspan="7" class="empty">אין משתמשים</td></tr>`;
     return;
@@ -94,8 +121,8 @@ function renderTable(tbody) {
         <td>${escapeHtml(u.email || "")}</td>
         <td>${u.role === "ahmash" ? '<span class="badge amber">אחמ"ש</span>' : '<span class="badge blue">קב"ט</span>'}</td>
         <td>${superAdmin
-            ? '<span class="badge purple">מנהל על</span>'
-            : (u.isAdmin ? '<span class="badge green">מנהל</span>' : '<span class="badge red">לא</span>')}
+        ? '<span class="badge purple">מנהל על</span>'
+        : (u.isAdmin ? '<span class="badge green">מנהל</span>' : '<span class="badge red">לא</span>')}
         </td>
         <td>${escapeHtml(u.createdAt ? formatDateTime(u.createdAt) : "")}</td>
         <td>
@@ -148,7 +175,8 @@ function openAddUserModal() {
       </form>`,
     footerButtons: [
       { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
-      { label: "צור משתמש", className: "btn-success", id: "createUserBtn", onClick: async ({ body, close }) => {
+      {
+        label: "צור משתמש", className: "btn-success", id: "createUserBtn", onClick: async ({ body, close }) => {
           const btn = document.getElementById("createUserBtn");
           btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> יוצר...`;
           try {
@@ -177,7 +205,7 @@ function openAddUserModal() {
             await set(ref(db, `${COLLECTION}/${newUid}`), profile);
 
             // Sign the secondary instance out so it doesn't keep that session.
-            try { await secondarySignOut(secondaryAuth); } catch (_) {}
+            try { await secondarySignOut(secondaryAuth); } catch (_) { }
 
             toast("המשתמש נוצר בהצלחה", "success");
             close();
@@ -190,7 +218,8 @@ function openAddUserModal() {
             toast(msg, "error");
             btn.disabled = false; btn.textContent = "צור משתמש";
           }
-        } }
+        }
+      }
     ]
   });
 }

@@ -1,7 +1,7 @@
 // App entry: hash router and global wiring.
 import { auth } from "./firebase.js";
 import {
-  watchAuth, renderLogin, logout, currentUser, userDisplayLabel
+  watchAuth, renderLogin, logout, currentUser, userDisplayLabel, onUserChange
 } from "./auth.js";
 import { renderHome } from "./home.js";
 import { renderLostItems, teardownLostItems } from "./lostItems.js";
@@ -85,6 +85,17 @@ function safeNavigate() {
     showRouteError(error);
   }
 }
+
+onUserChange(() => {
+  userInfoEl.innerHTML = userDisplayLabel();
+
+  if (!isSignedIn || !auth.currentUser) return;
+
+  const route = currentRoute() || "/home";
+  if (route === "/home" || route === "/users" || route === "/manager-actions") {
+    safeNavigate();
+  }
+});
 
 window.addEventListener("hashchange", safeNavigate);
 

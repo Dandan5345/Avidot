@@ -22,6 +22,7 @@ export const currentUser = {
 };
 
 const PROFILE_LOAD_TIMEOUT_MS = 8000;
+let authStateVersion = 0;
 
 const listeners = new Set();
 export function onUserChange(fn) {
@@ -83,6 +84,30 @@ export async function loadUserProfile(fbUser) {
   notify();
 }
 
+async function refreshUserProfileInBackground(fbUser, expectedVersion) {
+  try {
+    const snap = await withTimeout(
+      get(ref(db, `users/${fbUser.uid}`)),
+      PROFILE_LOAD_TIMEOUT_MS,
+      "Timed out while loading user profile"
+    );
+
+    if (expectedVersion !== authStateVersion || auth.currentUser?.uid !== fbUser.uid) {
+      return;
+    }
+
+    const profile = snap.val();
+    currentUser.name = (profile && profile.name) || fbUser.email;
+    currentUser.employeeNumber = (profile && profile.employeeNumber) || "";
+    currentUser.role = (profile && profile.role) || (currentUser.isSuperAdmin ? "ahmash" : "kabat");
+    currentUser.isAdmin = !!(profile && profile.isAdmin) || currentUser.isSuperAdmin;
+    currentUser.authReady = true;
+    notify();
+  } catch (e) {
+    console.warn("Could not refresh user profile in background:", e);
+  }
+}
+
 export function clearCurrentUser() {
   currentUser.uid = null;
   currentUser.email = null;
@@ -97,19 +122,18 @@ export function clearCurrentUser() {
 
 export function watchAuth(onSignedIn, onSignedOut) {
   onAuthStateChanged(auth, async (fbUser) => {
+    const currentVersion = ++authStateVersion;
+
     if (fbUser) {
-      try {
-        await loadUserProfile(fbUser);
-      } catch (e) {
-        console.error("[auth] failed to load profile, continuing with fallback state:", e);
-        applyFallbackProfile(fbUser);
-      }
+      applyFallbackProfile(fbUser);
 
       try {
         if (onSignedIn) await onSignedIn(currentUser);
       } catch (e) {
         console.error("[auth] signed-in handler failed:", e);
       }
+
+      refreshUserProfileInBackground(fbUser, currentVersion);
     } else {
       clearCurrentUser();
       try {

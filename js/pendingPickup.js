@@ -15,6 +15,9 @@ import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
 const COLLECTION = "pendingPickup";
 let unsubscribe = null;
 let allItems = [];
+let hasLoadedSnapshot = false;
+let loadError = "";
+let initialLoadTimer = null;
 let viewState = { search: "", date: "", showReturned: false };
 
 export function renderPendingPickup(container) {
@@ -67,13 +70,37 @@ export function renderPendingPickup(container) {
   container.querySelector("#returnBtn").addEventListener("click", () => openReturnFlow());
 
   const r = ref(db, COLLECTION);
+  loadError = "";
+  clearTimeout(initialLoadTimer);
+  initialLoadTimer = setTimeout(() => {
+    if (!hasLoadedSnapshot) {
+      loadError = "אין תגובה ממסד הנתונים. בדוק את הגדרות Firebase Realtime Database.";
+      render();
+    }
+  }, 5000);
+
   unsubscribe = onValue(r, (snap) => {
+    clearTimeout(initialLoadTimer);
     const v = snap.val() || {};
     allItems = Object.entries(v).map(([id, val]) => ({ id, ...val }));
+    hasLoadedSnapshot = true;
+    loadError = "";
+    render();
+  }, (error) => {
+    clearTimeout(initialLoadTimer);
+    loadError = error?.message || "שגיאה בטעינת הנתונים";
     render();
   });
 
+  if (hasLoadedSnapshot) render();
+
   function render() {
+    if (loadError && !hasLoadedSnapshot) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(loadError)}</td></tr>`;
+      countLabel.textContent = "";
+      return;
+    }
+
     let items = filterItems(allItems, { search: viewState.search, dateFilter: viewState.date });
     if (!viewState.showReturned) items = items.filter((it) => !it.returned);
     items.sort((a, b) => (Number(b.number) || 0) - (Number(a.number) || 0));
@@ -117,13 +144,14 @@ export function renderPendingPickup(container) {
     try {
       const data = JSON.parse(pending);
       setTimeout(() => openAddModal({ prefill: data }), 100);
-    } catch (_) {}
+    } catch (_) { }
   }
 }
 
 export function teardownPendingPickup() {
+  clearTimeout(initialLoadTimer);
   if (unsubscribe) {
-    try { unsubscribe(); } catch (_) {}
+    try { unsubscribe(); } catch (_) { }
     unsubscribe = null;
   }
 }
@@ -180,9 +208,11 @@ async function openAddModal({ prefill = null } = {}) {
       </form>`,
     footerButtons: [
       { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
-      { label: "שמור", className: "btn-success", id: "saveBtn2", onClick: async ({ body, close }) => {
+      {
+        label: "שמור", className: "btn-success", id: "saveBtn2", onClick: async ({ body, close }) => {
           await save({ body, close, prefill });
-        } }
+        }
+      }
     ]
   });
 
@@ -320,7 +350,8 @@ function openReturnFormModal(item) {
       </div>`,
     footerButtons: [
       { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
-      { label: "אישור איסוף", className: "btn-success", onClick: async ({ body, close }) => {
+      {
+        label: "אישור איסוף", className: "btn-success", onClick: async ({ body, close }) => {
           const receiverName = body.querySelector("#r_receiverName").value.trim();
           const receiverContact = body.querySelector("#r_receiverContact").value.trim();
           const handlerName = body.querySelector("#r_handlerName").value.trim();
@@ -337,7 +368,8 @@ function openReturnFormModal(item) {
             toast("האבידה סומנה כנאספה", "success");
             close();
           } catch (e) { toast(e.message || "שגיאה", "error"); }
-        } }
+        }
+      }
     ]
   });
 }

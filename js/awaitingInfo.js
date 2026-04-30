@@ -14,6 +14,9 @@ import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
 const COLLECTION = "awaitingInfo";
 let unsubscribe = null;
 let allItems = [];
+let hasLoadedSnapshot = false;
+let loadError = "";
+let initialLoadTimer = null;
 let viewState = { search: "", date: "" };
 
 export function renderAwaitingInfo(container) {
@@ -55,13 +58,37 @@ export function renderAwaitingInfo(container) {
   });
   container.querySelector("#addBtn").addEventListener("click", () => openAddModal());
 
+  loadError = "";
+  clearTimeout(initialLoadTimer);
+  initialLoadTimer = setTimeout(() => {
+    if (!hasLoadedSnapshot) {
+      loadError = "אין תגובה ממסד הנתונים. בדוק את הגדרות Firebase Realtime Database.";
+      render();
+    }
+  }, 5000);
+
   unsubscribe = onValue(ref(db, COLLECTION), (snap) => {
+    clearTimeout(initialLoadTimer);
     const v = snap.val() || {};
     allItems = Object.entries(v).map(([id, val]) => ({ id, ...val }));
+    hasLoadedSnapshot = true;
+    loadError = "";
+    render();
+  }, (error) => {
+    clearTimeout(initialLoadTimer);
+    loadError = error?.message || "שגיאה בטעינת הנתונים";
     render();
   });
 
+  if (hasLoadedSnapshot) render();
+
   function render() {
+    if (loadError && !hasLoadedSnapshot) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(loadError)}</td></tr>`;
+      countLabel.textContent = "";
+      return;
+    }
+
     let items = filterItems(allItems, { search: viewState.search, dateFilter: viewState.date });
     items.sort((a, b) => (Number(b.number) || 0) - (Number(a.number) || 0));
     countLabel.textContent = `${items.length} פריטים`;
@@ -99,8 +126,9 @@ export function renderAwaitingInfo(container) {
 }
 
 export function teardownAwaitingInfo() {
+  clearTimeout(initialLoadTimer);
   if (unsubscribe) {
-    try { unsubscribe(); } catch (_) {}
+    try { unsubscribe(); } catch (_) { }
     unsubscribe = null;
   }
 }
@@ -140,9 +168,11 @@ async function openAddModal() {
       </form>`,
     footerButtons: [
       { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
-      { label: "שמור", className: "btn-success", id: "saveBtn3", onClick: async ({ body, close }) => {
+      {
+        label: "שמור", className: "btn-success", id: "saveBtn3", onClick: async ({ body, close }) => {
           await save({ body, close });
-        } }
+        }
+      }
     ]
   });
 
