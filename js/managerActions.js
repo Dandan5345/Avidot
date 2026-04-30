@@ -73,6 +73,28 @@ async function onRun(container) {
 
   lastFiltered = filtered;
 
+  void logActivitySafe({
+    action: action === "donation" ? "manager.fetch.donation" : "manager.fetch.delete_candidates",
+    entityType: "report",
+    summary: `${actorLabel()} ביצע משיכת נתונים בדף פעולות אחמ"ש`,
+    detailLines: [
+      `סוג פעולה: ${action === "donation" ? "תרומת אבידות" : "מחיקת אבידות"}`,
+      `טווח תאריכים: ${formatDate(from)} עד ${formatDate(to)}`,
+      `כולל יקרות ערך: ${includeValuable ? "כן" : "לא"}`,
+      `סה"כ רשומות תואמות: ${filtered.length}`,
+      `סה"כ רשומות שנבדקו: ${items.length}`
+    ],
+    metadata: {
+      sourceCollection: COLLECTION,
+      actionType: action,
+      fromDate: from.toISOString(),
+      toDate: to.toISOString(),
+      includeValuable,
+      matchedCount: filtered.length,
+      scannedCount: items.length
+    }
+  });
+
   if (action === "donation") renderDonationView(container, filtered, { from, to, includeValuable });
   else renderDeleteView(container, filtered, { from, to, includeValuable });
 }
@@ -103,9 +125,43 @@ function renderDonationView(container, items, opts) {
   sortSel.value = lastSortBy;
   sortSel.addEventListener("change", () => {
     lastSortBy = sortSel.value;
+    void logActivitySafe({
+      action: "manager.sort.donation",
+      entityType: "report",
+      summary: `${actorLabel()} שינה את המיון ברשימת התרומה`,
+      detailLines: [
+        `מיון נבחר: ${sortLabel(lastSortBy)}`,
+        `כמות פריטים בתצוגה: ${items.length}`
+      ],
+      metadata: {
+        sourceCollection: COLLECTION,
+        sortBy: lastSortBy,
+        matchedCount: items.length
+      }
+    });
     renderPrintList(area.querySelector("#printArea"), items, opts, lastSortBy);
   });
-  area.querySelector("#printBtn").addEventListener("click", () => window.print());
+  area.querySelector("#printBtn").addEventListener("click", () => {
+    void logActivitySafe({
+      action: "manager.print.donation",
+      entityType: "report",
+      summary: `${actorLabel()} הדפיס רשימת אבידות לתרומה`,
+      detailLines: [
+        `מיון: ${sortLabel(lastSortBy)}`,
+        `כמות פריטים: ${items.length}`,
+        `טווח תאריכים: ${formatDate(opts.from)} עד ${formatDate(opts.to)}`
+      ],
+      metadata: {
+        sourceCollection: COLLECTION,
+        sortBy: lastSortBy,
+        matchedCount: items.length,
+        fromDate: opts.from.toISOString(),
+        toDate: opts.to.toISOString(),
+        includeValuable: opts.includeValuable
+      }
+    });
+    window.print();
+  });
 
   renderPrintList(area.querySelector("#printArea"), items, opts, lastSortBy);
 }
@@ -249,4 +305,15 @@ function chunkItems(items, size) {
 
 function actorLabel() {
   return currentUser.name || currentUser.email || "משתמש";
+}
+
+function sortLabel(sortBy) {
+  switch (sortBy) {
+    case "date":
+      return "לפי תאריך";
+    case "finderDept":
+      return "לפי שם המוצא ומחלקות";
+    default:
+      return "לפי מחלקות";
+  }
 }

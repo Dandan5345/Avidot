@@ -9,14 +9,14 @@ let loadError = "";
 let viewState = { search: "", actor: "", date: "" };
 
 export function renderActivityLogsPage(container) {
-  if (!isAdmin()) {
-    container.innerHTML = `
+    if (!isAdmin()) {
+        container.innerHTML = `
       <div class="page-title"><h2>LOG</h2></div>
       <div class="section-card"><p>אין לך הרשאה לדף זה.</p></div>`;
-    return;
-  }
+        return;
+    }
 
-  container.innerHTML = `
+    container.innerHTML = `
     <div class="page-title">
       <h2>📜 LOG</h2>
     </div>
@@ -43,94 +43,94 @@ export function renderActivityLogsPage(container) {
     </div>
   `;
 
-  const searchInput = container.querySelector("#logSearch");
-  const actorFilter = container.querySelector("#logActorFilter");
-  const dateFilter = container.querySelector("#logDateFilter");
+    const searchInput = container.querySelector("#logSearch");
+    const actorFilter = container.querySelector("#logActorFilter");
+    const dateFilter = container.querySelector("#logDateFilter");
 
-  searchInput.addEventListener("input", () => {
-    viewState.search = searchInput.value;
-    render(container);
-  });
-  actorFilter.addEventListener("change", () => {
-    viewState.actor = actorFilter.value;
-    render(container);
-  });
-  dateFilter.addEventListener("change", () => {
-    viewState.date = dateFilter.value;
-    render(container);
-  });
-  container.querySelector("#clearLogFilters").addEventListener("click", () => {
-    viewState = { search: "", actor: "", date: "" };
-    searchInput.value = "";
-    actorFilter.value = "";
-    dateFilter.value = "";
-    render(container);
-  });
+    searchInput.addEventListener("input", () => {
+        viewState.search = searchInput.value;
+        render(container);
+    });
+    actorFilter.addEventListener("change", () => {
+        viewState.actor = actorFilter.value;
+        render(container);
+    });
+    dateFilter.addEventListener("change", () => {
+        viewState.date = dateFilter.value;
+        render(container);
+    });
+    container.querySelector("#clearLogFilters").addEventListener("click", () => {
+        viewState = { search: "", actor: "", date: "" };
+        searchInput.value = "";
+        actorFilter.value = "";
+        dateFilter.value = "";
+        render(container);
+    });
 
-  unsubscribe = subscribeActivityLogs((logs) => {
-    allLogs = logs;
-    hasLoadedSnapshot = true;
-    loadError = "";
-    render(container);
-  }, (error) => {
-    loadError = error?.message || "שגיאה בטעינת הלוג";
-    render(container);
-  });
+    unsubscribe = subscribeActivityLogs((logs) => {
+        allLogs = logs;
+        hasLoadedSnapshot = true;
+        loadError = "";
+        render(container);
+    }, (error) => {
+        loadError = error?.message || "שגיאה בטעינת הלוג";
+        render(container);
+    });
 }
 
 export function teardownActivityLogsPage() {
-  if (unsubscribe) {
-    try { unsubscribe(); } catch (_) { }
-    unsubscribe = null;
-  }
+    if (unsubscribe) {
+        try { unsubscribe(); } catch (_) { }
+        unsubscribe = null;
+    }
 }
 
 function render(container) {
-  const actorFilter = container.querySelector("#logActorFilter");
-  const countLabel = container.querySelector("#logCountLabel");
-  const summaryEl = container.querySelector("#logSummary");
-  const listEl = container.querySelector("#logList");
+    const actorFilter = container.querySelector("#logActorFilter");
+    const countLabel = container.querySelector("#logCountLabel");
+    const summaryEl = container.querySelector("#logSummary");
+    const listEl = container.querySelector("#logList");
 
-  if (!hasLoadedSnapshot && loadError) {
-    listEl.innerHTML = `<div class="section-card"><p>${escapeHtml(loadError)}</p></div>`;
-    summaryEl.innerHTML = "";
-    countLabel.textContent = "";
-    return;
-  }
+    if (!hasLoadedSnapshot && loadError) {
+        listEl.innerHTML = `<div class="section-card"><p>${escapeHtml(loadError)}</p></div>`;
+        summaryEl.innerHTML = "";
+        countLabel.textContent = "";
+        return;
+    }
 
-  actorFilter.innerHTML = renderActorOptions(allLogs, viewState.actor);
+    actorFilter.innerHTML = renderActorOptions(allLogs, viewState.actor);
 
-  const filtered = allLogs.filter((log) => matchesFilters(log));
-  countLabel.textContent = `${filtered.length} רשומות`;
-  summaryEl.innerHTML = renderSummary(filtered);
+    const filtered = allLogs.filter((log) => matchesFilters(log));
+    countLabel.textContent = `${filtered.length} רשומות`;
+    summaryEl.innerHTML = renderSummary(filtered);
 
-  if (!filtered.length) {
-    listEl.innerHTML = `
+    if (!filtered.length) {
+        listEl.innerHTML = `
       <div class="section-card log-empty-state">
         <strong>לא נמצאו פעולות שתואמות לסינון</strong>
         <p>נסה לחפש לפי שם משתמש, מספר אבידה, או תאריך אחר.</p>
       </div>`;
-    return;
-  }
+        return;
+    }
 
-  listEl.innerHTML = filtered.map((log, index) => renderLogCard(log, index)).join("");
+    listEl.innerHTML = filtered.map((log, index) => renderLogCard(log, index)).join("");
 }
 
 function renderActorOptions(logs, selectedActor) {
-  const names = Array.from(new Set(logs.map((log) => log.actorName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "he"));
-  return [
-    `<option value="">כל המשתמשים</option>`,
-    ...names.map((name) => `<option value="${escapeHtml(name)}" ${selectedActor === name ? "selected" : ""}>${escapeHtml(name)}</option>`)
-  ].join("");
+    const names = Array.from(new Set(logs.map((log) => log.actorName).filter(Boolean))).sort((a, b) => a.localeCompare(b, "he"));
+    return [
+        `<option value="">כל המשתמשים</option>`,
+        ...names.map((name) => `<option value="${escapeHtml(name)}" ${selectedActor === name ? "selected" : ""}>${escapeHtml(name)}</option>`)
+    ].join("");
 }
 
 function renderSummary(logs) {
-  const itemChanges = logs.filter((log) => log.entityType === "item").length;
-  const userChanges = logs.filter((log) => log.entityType === "user").length;
-  const moveChanges = logs.filter((log) => String(log.action || "").includes("transfer")).length;
-  const latest = logs[0]?.createdAt ? formatDateTime(logs[0].createdAt) : "-";
+    const itemChanges = logs.filter((log) => log.entityType === "item").length;
+    const userChanges = logs.filter((log) => log.entityType === "user").length;
+    const moveChanges = logs.filter((log) => String(log.action || "").includes("transfer")).length;
+    const latest = logs[0]?.createdAt ? formatDateTime(logs[0].createdAt) : "-";
 
-  return `
+    return `
     <div class="log-summary-card section-card">
       <strong>${logs.length}</strong>
       <span>סה"כ פעולות מוצגות</span>
@@ -155,40 +155,40 @@ function renderSummary(logs) {
 }
 
 function matchesFilters(log) {
-  const q = (viewState.search || "").trim().toLowerCase();
-  const text = [
-    log.summary,
-    log.actorName,
-    log.itemNumber,
-    ...(Array.isArray(log.detailLines) ? log.detailLines : [])
-  ].join(" ").toLowerCase();
-  if (q && !text.includes(q)) return false;
-  if (viewState.actor && (log.actorName || "") !== viewState.actor) return false;
-  if (viewState.date) {
-    const logDate = toDateKey(log.createdAt);
-    if (logDate !== viewState.date) return false;
-  }
-  return true;
+    const q = (viewState.search || "").trim().toLowerCase();
+    const text = [
+        log.summary,
+        log.actorName,
+        log.itemNumber,
+        ...(Array.isArray(log.detailLines) ? log.detailLines : [])
+    ].join(" ").toLowerCase();
+    if (q && !text.includes(q)) return false;
+    if (viewState.actor && (log.actorName || "") !== viewState.actor) return false;
+    if (viewState.date) {
+        const logDate = toDateKey(log.createdAt);
+        if (logDate !== viewState.date) return false;
+    }
+    return true;
 }
 
 function toDateKey(value) {
-  const date = new Date(value || "");
-  if (Number.isNaN(date.getTime())) return "";
-  const pad = (num) => String(num).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (num) => String(num).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function renderLogCard(log, index) {
-  const meta = log.metadata || {};
-  const chips = [
-    log.actorName ? `<span class="badge blue">${escapeHtml(log.actorName)}</span>` : "",
-    log.itemNumber ? `<span class="log-chip">אבידה ${escapeHtml(log.itemNumber)}</span>` : "",
-    meta.sourceCollection ? `<span class="log-chip">מ: ${escapeHtml(collectionLabel(meta.sourceCollection))}</span>` : "",
-    meta.targetCollection ? `<span class="log-chip">ל: ${escapeHtml(collectionLabel(meta.targetCollection))}</span>` : "",
-    `<span class="log-chip muted-chip">${escapeHtml(entityLabel(log.entityType))}</span>`
-  ].filter(Boolean).join("");
+    const meta = log.metadata || {};
+    const chips = [
+        log.actorName ? `<span class="badge blue">${escapeHtml(log.actorName)}</span>` : "",
+        log.itemNumber ? `<span class="log-chip">אבידה ${escapeHtml(log.itemNumber)}</span>` : "",
+        meta.sourceCollection ? `<span class="log-chip">מ: ${escapeHtml(collectionLabel(meta.sourceCollection))}</span>` : "",
+        meta.targetCollection ? `<span class="log-chip">ל: ${escapeHtml(collectionLabel(meta.targetCollection))}</span>` : "",
+        `<span class="log-chip muted-chip">${escapeHtml(entityLabel(log.entityType))}</span>`
+    ].filter(Boolean).join("");
 
-  return `
+    return `
     <article class="log-card section-card" style="animation-delay:${Math.min(index * 40, 240)}ms">
       <div class="log-card-head">
         <div class="log-card-copy">
@@ -207,14 +207,14 @@ function renderLogCard(log, index) {
 }
 
 function renderLogFacts(log) {
-  const facts = [
-    log.actorEmail ? { label: 'משתמש', value: log.actorEmail } : null,
-    log.action ? { label: 'סוג פעולה', value: actionLabel(log.action) } : null
-  ].filter(Boolean);
+    const facts = [
+        log.actorEmail ? { label: 'משתמש', value: log.actorEmail } : null,
+        log.action ? { label: 'סוג פעולה', value: actionLabel(log.action) } : null
+    ].filter(Boolean);
 
-  if (!facts.length) return "";
+    if (!facts.length) return "";
 
-  return `
+    return `
     <div class="log-facts-grid">
       ${facts.map((fact) => `
         <div class="log-fact">
@@ -225,22 +225,30 @@ function renderLogFacts(log) {
 }
 
 function entityLabel(entityType) {
-  switch (entityType) {
-    case "item":
-      return "אבידה";
-    case "user":
-      return "משתמש";
-    default:
-      return "מערכת";
-  }
+    switch (entityType) {
+        case "item":
+            return "אבידה";
+        case "user":
+            return "משתמש";
+        case "page":
+            return "דף";
+        case "report":
+            return "דוח";
+        default:
+            return "מערכת";
+    }
 }
 
 function actionLabel(action) {
-  if (!action) return "פעולה כללית";
-  if (action.includes("transfer")) return "העברה בין דפים";
-  if (action.includes("return")) return "החזרה / מסירה";
-  if (action.includes("delete")) return "מחיקה";
-  if (action.includes("create")) return "יצירה";
-  if (action.includes("update")) return "עדכון";
-  return action;
+    if (!action) return "פעולה כללית";
+    if (action.includes("transfer")) return "העברה בין דפים";
+    if (action.includes("return")) return "החזרה / מסירה";
+    if (action.includes("delete")) return "מחיקה";
+    if (action.includes("create")) return "יצירה";
+    if (action.includes("update")) return "עדכון";
+    if (action.includes("view")) return "צפייה";
+    if (action.includes("fetch")) return "משיכת נתונים";
+    if (action.includes("print")) return "הדפסה";
+    if (action.includes("sort")) return "מיון";
+    return action;
 }

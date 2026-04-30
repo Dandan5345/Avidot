@@ -11,6 +11,7 @@ import { renderManagerActions } from "./managerActions.js";
 import { renderUsers, teardownUsers, ensureSuperAdminProfile } from "./users.js";
 import { renderActivityLogsPage, teardownActivityLogsPage } from "./activityLogsPage.js";
 import { isAdmin, isAhmash } from "./auth.js";
+import { logActivitySafe } from "./activityLog.js";
 
 const appEl = document.getElementById("app");
 const topbarEl = document.getElementById("topbar");
@@ -20,6 +21,7 @@ const homeBtn = document.getElementById("homeBtn");
 
 let currentTeardown = null;
 let isSignedIn = false;
+let lastRouteLog = { route: "", at: 0 };
 
 appEl.innerHTML = `<div class="section-card"><p>טוען...</p></div>`;
 
@@ -77,6 +79,8 @@ function navigate() {
       renderHome(appEl);
       currentTeardown = null;
   }
+
+  logRouteVisit(rawRoute);
 }
 
 function showRouteError(error) {
@@ -90,6 +94,53 @@ function safeNavigate() {
   } catch (error) {
     showRouteError(error);
   }
+}
+
+function logRouteVisit(route) {
+  const normalizedRoute = route || "/home";
+  if (normalizedRoute === "/login") return;
+
+  const now = Date.now();
+  if (lastRouteLog.route === normalizedRoute && now - lastRouteLog.at < 3000) {
+    return;
+  }
+  lastRouteLog = { route: normalizedRoute, at: now };
+
+  void logActivitySafe({
+    action: "page.view",
+    summary: `${userDisplayLabelText()} פתח את הדף ${routeLabel(normalizedRoute)}`,
+    entityType: "page",
+    entityId: normalizedRoute,
+    detailLines: [`נתיב: ${normalizedRoute}`],
+    metadata: { route: normalizedRoute }
+  });
+}
+
+function routeLabel(route) {
+  switch (route) {
+    case "/home":
+    case "/":
+    case "":
+      return "דף הבית";
+    case "/lost-items":
+      return "אבידות רגילות";
+    case "/pending-pickup":
+      return "ממתינות לאיסוף";
+    case "/awaiting-info":
+      return "ממתינות למידע";
+    case "/manager-actions":
+      return 'פעולות אחמ"ש';
+    case "/users":
+      return "ניהול משתמשים";
+    case "/activity-log":
+      return "LOG";
+    default:
+      return route;
+  }
+}
+
+function userDisplayLabelText() {
+  return currentUser.name || currentUser.email || "משתמש";
 }
 
 onUserChange(() => {

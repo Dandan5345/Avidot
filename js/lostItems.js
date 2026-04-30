@@ -250,16 +250,18 @@ async function openAddModal({ prefill = null } = {}) {
           <span>מלאו רק פרטים ידועים ומדויקים. אם אין דרך ליצור קשר עם בעל האבידה, זה המקום הנכון לפתוח את הרשומה.</span>
         </div>
         <div class="form-grid">
-          <label class="field">
-            <span>מספר אבידה</span>
-            <input type="number" id="f_number" value="${escapeHtml(String(prefill && prefill.number ? prefill.number : suggestedNumber))}" required />
-            <small class="field-note">מספר פנימי לזיהוי האבידה במערכת. אפשר להשאיר את המספר שהמערכת הציעה.</small>
-          </label>
-          <label class="field">
-            <span>תאריך ושעה</span>
-            <input type="datetime-local" id="f_dateTime" value="${prefill && prefill.dateTime ? toLocalInput(prefill.dateTime) : nowAsLocalInputValue()}" required />
-            <small class="field-note">מתי האבידה נמצאה או התקבלה אצלכם בפועל.</small>
-          </label>
+          <div class="field-row">
+            <label class="field">
+              <span>מספר אבידה</span>
+              <input type="number" id="f_number" value="${escapeHtml(String(prefill && prefill.number ? prefill.number : suggestedNumber))}" required />
+              <small class="field-note">מזהה פנימי.</small>
+            </label>
+            <label class="field">
+              <span>תאריך ושעה</span>
+              <input type="datetime-local" id="f_dateTime" value="${prefill && prefill.dateTime ? toLocalInput(prefill.dateTime) : nowAsLocalInputValue()}" required />
+              <small class="field-note">מתי האבידה נמצאה.</small>
+            </label>
+          </div>
           <label class="field full">
             <span>תיאור פריט</span>
             <textarea id="f_description" required>${escapeHtml(prefill && prefill.description || "")}</textarea>
