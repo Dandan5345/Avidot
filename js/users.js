@@ -3,12 +3,12 @@
 // replacing the current admin's session.
 import {
   createUserWithEmailAndPassword, signOut as secondarySignOut,
-  updatePassword
+  sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import {
   ref, get, set, update, remove, onValue
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
-import { db, secondaryAuth, isSuperAdminEmail, SUPER_ADMIN_EMAIL } from "./firebase.js";
+import { db, auth, secondaryAuth, isSuperAdminEmail, SUPER_ADMIN_EMAIL } from "./firebase.js";
 import { isAdmin, currentUser } from "./auth.js";
 import {
   escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime
@@ -253,11 +253,20 @@ async function onDelete(u) {
 }
 
 async function onResetPassword(u) {
-  if (isSuperAdminEmail(u.email)) { toast("יש לאפס את סיסמת מנהל העל דרך Firebase Console", "info"); return; }
-  toast("איפוס סיסמה למשתמש קיים נעשה דרך Firebase Console או דרך אימייל איפוס", "info", 5000);
-  // We avoid the client-only updatePassword approach because it requires the
-  // target user to be currently signed in. The recommended path is the
-  // Auth Console / sendPasswordResetEmail.
+  if (!u.email) { toast("למשתמש אין כתובת אימייל", "error"); return; }
+  const ok = await confirmDialog({
+    title: "איפוס סיסמה",
+    message: `לשלוח אימייל לאיפוס סיסמה אל ${u.email}?`,
+    confirmText: "שלח"
+  });
+  if (!ok) return;
+  try {
+    await sendPasswordResetEmail(auth, u.email);
+    toast("נשלח אימייל לאיפוס סיסמה", "success");
+  } catch (e) {
+    console.error(e);
+    toast(e.message || "שגיאה בשליחת אימייל לאיפוס", "error");
+  }
 }
 
 // Helper: ensures the super admin has a /users record (auto-created at login).

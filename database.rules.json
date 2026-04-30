@@ -3,11 +3,11 @@
     ".read": "auth != null",
 
     "users": {
-      ".read":  "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
-      ".write": "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
+      ".read":  "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
+      ".write": "auth != null && (auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)",
 
       "$uid": {
-        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'Doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)"
+        ".read":  "auth != null && (auth.uid == $uid || auth.token.email == 'Doronenakache@gmail.com' || auth.token.email == 'doronenakache@gmail.com' || root.child('users').child(auth.uid).child('isAdmin').val() == true)"
       }
     },
 

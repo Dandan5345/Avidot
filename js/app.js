@@ -20,24 +20,6 @@ const homeBtn = document.getElementById("homeBtn");
 let currentTeardown = null;
 let isSignedIn = false;
 
-const ROUTES = {
-  "": renderHome,
-  "/": renderHome,
-  "/home": renderHome,
-  "/lost-items": renderLostItems,
-  "/pending-pickup": renderPendingPickup,
-  "/awaiting-info": renderAwaitingInfo,
-  "/manager-actions": renderManagerActions,
-  "/users": renderUsers
-};
-
-const ROUTE_TEARDOWNS = {
-  "/lost-items": teardownLostItems,
-  "/pending-pickup": teardownPendingPickup,
-  "/awaiting-info": teardownAwaitingInfo,
-  "/users": teardownUsers
-};
-
 function currentRoute() {
   const h = location.hash || "";
   return h.startsWith("#") ? h.slice(1) : h;
@@ -46,22 +28,47 @@ function currentRoute() {
 function navigate() {
   if (!isSignedIn) return; // login screen handles its own rendering
   const rawRoute = currentRoute() || "/home";
-  // Use a hard whitelist so user-controlled hash cannot dispatch to anything
-  // unexpected (e.g. inherited Object prototype methods).
-  const route = Object.prototype.hasOwnProperty.call(ROUTES, rawRoute) ? rawRoute : "/home";
 
   // Permission gates
-  if (route === "/users" && !isAdmin()) { location.hash = "#/home"; return; }
-  if (route === "/manager-actions" && !isAhmash()) { location.hash = "#/home"; return; }
+  if (rawRoute === "/users" && !isAdmin()) { location.hash = "#/home"; return; }
+  if (rawRoute === "/manager-actions" && !isAhmash()) { location.hash = "#/home"; return; }
 
   // teardown previous
   if (currentTeardown) { try { currentTeardown(); } catch (_) {} currentTeardown = null; }
 
-  const handler = ROUTES[route];
-  handler(appEl);
-  currentTeardown = Object.prototype.hasOwnProperty.call(ROUTE_TEARDOWNS, route)
-    ? ROUTE_TEARDOWNS[route]
-    : null;
+  // Explicit dispatch: never invoke a function from a user-controlled lookup
+  // on a regular object (avoids any prototype-pollution / unexpected-call risks).
+  switch (rawRoute) {
+    case "":
+    case "/":
+    case "/home":
+      renderHome(appEl);
+      currentTeardown = null;
+      break;
+    case "/lost-items":
+      renderLostItems(appEl);
+      currentTeardown = teardownLostItems;
+      break;
+    case "/pending-pickup":
+      renderPendingPickup(appEl);
+      currentTeardown = teardownPendingPickup;
+      break;
+    case "/awaiting-info":
+      renderAwaitingInfo(appEl);
+      currentTeardown = teardownAwaitingInfo;
+      break;
+    case "/manager-actions":
+      renderManagerActions(appEl);
+      currentTeardown = null;
+      break;
+    case "/users":
+      renderUsers(appEl);
+      currentTeardown = teardownUsers;
+      break;
+    default:
+      renderHome(appEl);
+      currentTeardown = null;
+  }
 }
 
 window.addEventListener("hashchange", navigate);
