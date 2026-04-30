@@ -1,0 +1,152 @@
+// Authentication / current user state and login screen.
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
+import { ref, get } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+import { auth, db, isSuperAdminEmail } from "./firebase.js";
+import { escapeHtml } from "./utils.js";
+
+// Current user snapshot used across the app.
+// Shape: { uid, email, name, employeeNumber, role, isAdmin, isSuperAdmin }
+export const currentUser = {
+  uid: null,
+  email: null,
+  name: "",
+  employeeNumber: "",
+  role: "kabat",         // "kabat" | "ahmash"
+  isAdmin: false,
+  isSuperAdmin: false,
+  authReady: false
+};
+
+const listeners = new Set();
+export function onUserChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+function notify() { for (const fn of listeners) try { fn(currentUser); } catch (_) {} }
+
+export function isAdmin() { return !!(currentUser.isAdmin || currentUser.isSuperAdmin); }
+export function isAhmash() { return currentUser.role === "ahmash" || isAdmin(); }
+
+export async function loadUserProfile(fbUser) {
+  currentUser.uid = fbUser.uid;
+  currentUser.email = fbUser.email;
+  currentUser.isSuperAdmin = isSuperAdminEmail(fbUser.email);
+
+  let profile = null;
+  try {
+    const snap = await get(ref(db, `users/${fbUser.uid}`));
+    profile = snap.val();
+  } catch (e) {
+    console.warn("Could not read user profile:", e);
+  }
+
+  currentUser.name = (profile && profile.name) || fbUser.email;
+  currentUser.employeeNumber = (profile && profile.employeeNumber) || "";
+  currentUser.role = (profile && profile.role) || (currentUser.isSuperAdmin ? "ahmash" : "kabat");
+  currentUser.isAdmin = !!(profile && profile.isAdmin) || currentUser.isSuperAdmin;
+  currentUser.authReady = true;
+  notify();
+}
+
+export function clearCurrentUser() {
+  currentUser.uid = null;
+  currentUser.email = null;
+  currentUser.name = "";
+  currentUser.employeeNumber = "";
+  currentUser.role = "kabat";
+  currentUser.isAdmin = false;
+  currentUser.isSuperAdmin = false;
+  currentUser.authReady = true;
+  notify();
+}
+
+export function watchAuth(onSignedIn, onSignedOut) {
+  onAuthStateChanged(auth, async (fbUser) => {
+    if (fbUser) {
+      await loadUserProfile(fbUser);
+      onSignedIn && onSignedIn(currentUser);
+    } else {
+      clearCurrentUser();
+      onSignedOut && onSignedOut();
+    }
+  });
+}
+
+export async function logout() {
+  await signOut(auth);
+}
+
+// ===== Login screen =====
+export function renderLogin(container) {
+  container.innerHTML = `
+    <div class="login-wrap">
+      <form class="login-card" id="loginForm" autocomplete="on">
+        <h1>מערכת אבידות ומציאות</h1>
+        <p class="sub">מחלקת ביטחון – מלון</p>
+        <div id="loginError" class="login-error" style="display:none"></div>
+        <label class="field">
+          <span>אימייל</span>
+          <input type="email" id="loginEmail" required autocomplete="email" />
+        </label>
+        <label class="field">
+          <span>סיסמה</span>
+          <input type="password" id="loginPassword" required autocomplete="current-password" />
+        </label>
+        <button class="btn btn-block" type="submit" id="loginBtn">התחבר</button>
+        <p class="muted" style="margin-top:14px;text-align:center">
+          אין הרשמה פתוחה. משתמשים נוצרים על ידי מנהל בלבד.
+        </p>
+      </form>
+    </div>
+  `;
+
+  const form = container.querySelector("#loginForm");
+  const errEl = container.querySelector("#loginError");
+  const btn = container.querySelector("#loginBtn");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errEl.style.display = "none";
+    const email = container.querySelector("#loginEmail").value.trim();
+    const password = container.querySelector("#loginPassword").value;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      console.error(err);
+      let msg = "שגיאה בהתחברות";
+      const code = (err && err.code) || "";
+      if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+        msg = "אימייל או סיסמה שגויים";
+      } else if (code.includes("too-many-requests")) {
+        msg = "יותר מדי ניסיונות התחברות. נסה שוב מאוחר יותר.";
+      } else if (code.includes("network")) {
+        msg = "שגיאת רשת — בדוק את החיבור לאינטרנט";
+      } else if (err && err.message) {
+        msg = err.message;
+      }
+      errEl.textContent = msg;
+      errEl.style.display = "block";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "התחבר";
+    }
+  });
+}
+
+export function userDisplayLabel() {
+  if (!currentUser.uid) return "";
+  const role = currentUser.isSuperAdmin
+    ? "מנהל על"
+    : currentUser.isAdmin
+      ? "מנהל"
+      : currentUser.role === "ahmash"
+        ? "אחמ\"ש"
+        : "קב\"ט";
+  return `${escapeHtml(currentUser.name)} (${role})`;
+}
