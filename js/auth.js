@@ -115,20 +115,28 @@ export function renderLogin(container) {
     const password = container.querySelector("#loginPassword").value;
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
+    console.log("[login] attempting sign-in for", email);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      console.log("[login] sign-in succeeded");
     } catch (err) {
-      console.error(err);
+      console.error("[login] sign-in failed:", err);
       let msg = "שגיאה בהתחברות";
       const code = (err && err.code) || "";
-      if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+      if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found") || code.includes("invalid-login-credentials")) {
         msg = "אימייל או סיסמה שגויים";
       } else if (code.includes("too-many-requests")) {
         msg = "יותר מדי ניסיונות התחברות. נסה שוב מאוחר יותר.";
       } else if (code.includes("network")) {
         msg = "שגיאת רשת — בדוק את החיבור לאינטרנט";
+      } else if (code.includes("operation-not-allowed")) {
+        msg = "התחברות עם אימייל/סיסמה לא מופעלת ב-Firebase. יש להפעיל אותה ב-Firebase Console → Authentication → Sign-in method.";
+      } else if (code.includes("configuration-not-found")) {
+        msg = "שגיאת תצורה ב-Firebase Authentication. ודא שהאפליקציה מוגדרת נכון ושיטת ההתחברות מאופשרת.";
+      } else if (code.includes("invalid-api-key") || code.includes("api-key")) {
+        msg = "מפתח API לא תקין";
       } else if (err && err.message) {
-        msg = err.message;
+        msg = `${code ? `[${code}] ` : ""}${err.message}`;
       }
       errEl.textContent = msg;
       errEl.style.display = "block";

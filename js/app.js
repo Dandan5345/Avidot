@@ -81,6 +81,7 @@ homeBtn.addEventListener("click", () => { location.hash = "#/home"; });
 
 watchAuth(
   async (user) => {
+    console.log("[auth] signed in as", user && user.email);
     isSignedIn = true;
     topbarEl.classList.remove("hidden");
     userInfoEl.innerHTML = userDisplayLabel();
@@ -88,13 +89,20 @@ watchAuth(
     // Auto-provision the super admin's user profile so they always appear
     // in the admin panel and have isAdmin set, even before any /users record.
     if (auth.currentUser) {
-      try { await ensureSuperAdminProfile(auth.currentUser); } catch (_) {}
+      try { await ensureSuperAdminProfile(auth.currentUser); }
+      catch (e) { console.warn("[auth] ensureSuperAdminProfile failed:", e); }
     }
 
-    if (!location.hash || location.hash === "#" || location.hash === "#/login") {
-      location.hash = "#/home";
-    } else {
-      navigate();
+    try {
+      if (!location.hash || location.hash === "#" || location.hash === "#/login") {
+        if (location.hash === "#/home") navigate();
+        else location.hash = "#/home";
+      } else {
+        navigate();
+      }
+    } catch (e) {
+      console.error("[auth] navigate after sign-in failed:", e);
+      appEl.innerHTML = `<div class="section-card"><h3>שגיאה בטעינת הדף</h3><pre>${(e && e.message) || e}</pre></div>`;
     }
   },
   () => {
