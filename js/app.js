@@ -18,6 +18,8 @@ const topbarEl = document.getElementById("topbar");
 const userInfoEl = document.getElementById("userInfo");
 const logoutBtn = document.getElementById("logoutBtn");
 const homeBtn = document.getElementById("homeBtn");
+const brandLink = document.getElementById("brandLink");
+const appFooter = document.getElementById("appFooter");
 
 let currentTeardown = null;
 let isSignedIn = false;
@@ -161,12 +163,16 @@ logoutBtn.addEventListener("click", async () => {
   await logout();
 });
 homeBtn.addEventListener("click", () => { location.hash = "#/home"; });
+if (brandLink) {
+  brandLink.addEventListener("click", () => { location.hash = "#/home"; });
+}
 
 watchAuth(
   async (user) => {
     console.log("[auth] signed in as", user && user.email);
     isSignedIn = true;
     topbarEl.classList.remove("hidden");
+    if (appFooter) appFooter.classList.remove("hidden");
     userInfoEl.innerHTML = userDisplayLabel();
 
     try {
@@ -188,6 +194,7 @@ watchAuth(
   () => {
     isSignedIn = false;
     topbarEl.classList.add("hidden");
+    if (appFooter) appFooter.classList.add("hidden");
     if (currentTeardown) { try { currentTeardown(); } catch (_) { } currentTeardown = null; }
     renderLogin(appEl);
   }

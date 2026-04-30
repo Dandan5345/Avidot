@@ -13,15 +13,31 @@
     <div class="topbar-spacer" aria-hidden="true"></div>
     <div class="topbar-center">
       <button id="homeBtn" class="link-btn" title="דף הבית">🏠 דף הבית</button>
-      <span class="brand">אבידות ומציאות</span>
+      <span id="brandLink" class="brand" style="cursor: pointer;" title="למסך הראשי">אבידות ומציאות</span>
     </div>
     <div class="topbar-left">
-      <span id="userInfo" class="user-info"></span>
-      <button id="logoutBtn" class="btn btn-ghost">התנתק</button>
+      <div class="user-greeting">
+        <span class="user-greeting-icon">👤</span>
+        <span id="userInfo" class="user-info"></span>
+      </div>
+      <button id="logoutBtn" class="btn btn-ghost btn-sm">התנתק</button>
     </div>
   </header>
 
   <main id="app" class="app"></main>
+
+  <footer class="app-footer hidden" id="appFooter">
+    <div class="footer-content">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; margin-bottom: 8px;">
+        <path d="M5 21a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2z"></path>
+        <line x1="9" y1="9" x2="15" y2="9"></line>
+        <line x1="9" y1="13" x2="15" y2="13"></line>
+        <line x1="9" y1="17" x2="15" y2="17"></line>
+      </svg>
+      <strong>מלון ממילא ירושלים</strong>
+      <span>מערכת ניהול אבידות ומציאות | ביטחון</span>
+    </div>
+  </footer>
 
   <div id="modalRoot"></div>
   <div id="toastRoot" class="toast-root"></div>
