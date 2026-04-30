@@ -41,17 +41,19 @@ export async function uploadImageToImgBB(file) {
  * and shows a loading state; subsequent calls to getUrl() await it.
  */
 export function attachImageUpload(rootEl) {
-  const fileInput = rootEl.querySelector('input[type="file"]');
+  const cameraInput = rootEl.querySelector(".file-camera");
+  const galleryInput = rootEl.querySelector(".file-gallery");
+  const btnCamera = rootEl.querySelector(".img-btn-camera");
+  const btnGallery = rootEl.querySelector(".img-btn-gallery");
   const statusEl = rootEl.querySelector(".upload-status");
   const previewEl = rootEl.querySelector(".upload-preview");
 
   let uploadPromise = null;
   let uploadedUrl = null;
 
-  fileInput.addEventListener("change", () => {
+  function handleFile(file) {
     uploadedUrl = null;
     uploadPromise = null;
-    const file = fileInput.files && fileInput.files[0];
     if (!file) {
       statusEl.textContent = "";
       statusEl.className = "upload-status";
@@ -83,7 +85,29 @@ export function attachImageUpload(rootEl) {
         throw err;
       }
     );
-  });
+  }
+
+  // Bind buttons to hidden inputs
+  if (btnCamera) btnCamera.addEventListener("click", () => cameraInput.click());
+  if (btnGallery) btnGallery.addEventListener("click", () => galleryInput.click());
+
+  if (cameraInput) {
+    cameraInput.addEventListener("change", () => {
+      const file = cameraInput.files && cameraInput.files[0];
+      handleFile(file);
+      // Clear value so the same file can be selected again if needed
+      cameraInput.value = "";
+    });
+  }
+
+  if (galleryInput) {
+    galleryInput.addEventListener("change", () => {
+      const file = galleryInput.files && galleryInput.files[0];
+      handleFile(file);
+      // Clear value so the same file can be selected again if needed
+      galleryInput.value = "";
+    });
+  }
 
   return {
     /** Awaits the in-flight upload (if any) and returns the URL or null. */
@@ -104,7 +128,12 @@ export function imageUploadFieldHtml(label = "תמונה (אופציונלי)") 
     <label class="field full">
       <span>${label}</span>
       <div class="upload-row">
-        <input type="file" accept="image/*" />
+        <div class="upload-buttons">
+          <button type="button" class="btn img-btn-camera">📷 צלם עכשיו</button>
+          <button type="button" class="btn img-btn-gallery">🖼️ בחר מגלריה</button>
+        </div>
+        <input type="file" class="hidden file-camera" accept="image/*" capture="environment" />
+        <input type="file" class="hidden file-gallery" accept="image/*" />
         <img class="upload-preview" alt="" style="display:none" />
         <span class="upload-status"></span>
       </div>

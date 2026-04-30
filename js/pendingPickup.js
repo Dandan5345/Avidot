@@ -3,8 +3,7 @@ import {
   fetchAllItems, createItem, updateItem,
   findItemsByNumber, openItemDetailsModal, openReturnDetailsModal, deleteItem
 } from "./itemsCommon.js";
-import { onValue, ref } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
-import { db } from "./firebase.js";
+import { subscribeCollection } from "./firestoreStore.js";
 import { currentUser } from "./auth.js";
 import {
   escapeHtml, formatDateTime, nowAsLocalInputValue, toIsoFromLocalInput,
@@ -69,20 +68,18 @@ export function renderPendingPickup(container) {
   container.querySelector("#addBtn").addEventListener("click", () => openAddModal());
   container.querySelector("#returnBtn").addEventListener("click", () => openReturnFlow());
 
-  const r = ref(db, COLLECTION);
   loadError = "";
   clearTimeout(initialLoadTimer);
   initialLoadTimer = setTimeout(() => {
     if (!hasLoadedSnapshot) {
-      loadError = "אין תגובה ממסד הנתונים. בדוק את הגדרות Firebase Realtime Database.";
+      loadError = "אין תגובה מ-Firestore. בדוק את ההרשאות והחיבור לפרויקט Firebase.";
       render();
     }
   }, 5000);
 
-  unsubscribe = onValue(r, (snap) => {
+  unsubscribe = subscribeCollection(COLLECTION, (items) => {
     clearTimeout(initialLoadTimer);
-    const v = snap.val() || {};
-    allItems = Object.entries(v).map(([id, val]) => ({ id, ...val }));
+    allItems = items;
     hasLoadedSnapshot = true;
     loadError = "";
     render();

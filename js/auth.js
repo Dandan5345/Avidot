@@ -4,8 +4,8 @@ import {
   signOut,
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
-import { ref, get } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
-import { auth, db, isSuperAdminEmail } from "./firebase.js";
+import { auth, isSuperAdminEmail } from "./firebase.js";
+import { getDocument } from "./firestoreStore.js";
 import { escapeHtml } from "./utils.js";
 
 // Current user snapshot used across the app.
@@ -67,11 +67,11 @@ export async function loadUserProfile(fbUser) {
   let profile = null;
   try {
     const snap = await withTimeout(
-      get(ref(db, `users/${fbUser.uid}`)),
+      getDocument("users", fbUser.uid),
       PROFILE_LOAD_TIMEOUT_MS,
       "Timed out while loading user profile"
     );
-    profile = snap.val();
+    profile = snap;
   } catch (e) {
     console.warn("Could not read user profile:", e);
   }
@@ -87,7 +87,7 @@ export async function loadUserProfile(fbUser) {
 async function refreshUserProfileInBackground(fbUser, expectedVersion) {
   try {
     const snap = await withTimeout(
-      get(ref(db, `users/${fbUser.uid}`)),
+      getDocument("users", fbUser.uid),
       PROFILE_LOAD_TIMEOUT_MS,
       "Timed out while loading user profile"
     );
@@ -96,7 +96,7 @@ async function refreshUserProfileInBackground(fbUser, expectedVersion) {
       return;
     }
 
-    const profile = snap.val();
+    const profile = snap;
     currentUser.name = (profile && profile.name) || fbUser.email;
     currentUser.employeeNumber = (profile && profile.employeeNumber) || "";
     currentUser.role = (profile && profile.role) || (currentUser.isSuperAdmin ? "ahmash" : "kabat");

@@ -5,10 +5,15 @@ import {
   createUserWithEmailAndPassword, signOut as secondarySignOut,
   sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
+import { auth, secondaryAuth, isSuperAdminEmail } from "./firebase.js";
 import {
-  ref, get, set, update, remove, onValue
-} from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
-import { db, auth, secondaryAuth, isSuperAdminEmail, SUPER_ADMIN_EMAIL } from "./firebase.js";
+  createDocument,
+  deleteDocument,
+  getDocument,
+  setDocument,
+  subscribeCollection,
+  updateDocument
+} from "./firestoreStore.js";
 import { isAdmin, currentUser } from "./auth.js";
 import {
   escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime
@@ -60,15 +65,14 @@ export function renderUsers(container) {
   clearTimeout(initialLoadTimer);
   initialLoadTimer = setTimeout(() => {
     if (!hasLoadedSnapshot) {
-      loadError = "אין תגובה ממסד הנתונים. בדוק את הגדרות Firebase Realtime Database.";
+      loadError = "אין תגובה מ-Firestore. בדוק את ההרשאות והחיבור לפרויקט Firebase.";
       renderTable(container.querySelector("#usersTbody"));
     }
   }, 5000);
 
-  unsubscribe = onValue(ref(db, COLLECTION), (snap) => {
+  unsubscribe = subscribeCollection(COLLECTION, (users) => {
     clearTimeout(initialLoadTimer);
-    const v = snap.val() || {};
-    allUsers = Object.entries(v).map(([uid, val]) => ({ uid, ...val }));
+    allUsers = users.map((user) => ({ uid: user.id, ...user }));
     hasLoadedSnapshot = true;
     loadError = "";
     renderTable(container.querySelector("#usersTbody"));
@@ -202,7 +206,7 @@ function openAddUserModal() {
               createdAt: new Date().toISOString(),
               createdBy: currentUser.uid
             };
-            await set(ref(db, `${COLLECTION}/${newUid}`), profile);
+            await createDocument(COLLECTION, profile, newUid);
 
             // Sign the secondary instance out so it doesn't keep that session.
             try { await secondarySignOut(secondaryAuth); } catch (_) { }
@@ -251,7 +255,7 @@ async function onToggleAdmin(u) {
     toast("האישור לא תואם — הפעולה בוטלה", "error"); return;
   }
   try {
-    await update(ref(db, `${COLLECTION}/${u.uid}`), { isAdmin: isPromoting });
+    await updateDocument(COLLECTION, u.uid, { isAdmin: isPromoting });
     toast("בוצע", "success");
   } catch (e) { toast(e.message || "שגיאה", "error"); }
 }
@@ -275,7 +279,7 @@ async function onDelete(u) {
   });
   if ((confirmText || "").trim() !== "מחק") { toast("הפעולה בוטלה", "error"); return; }
   try {
-    await remove(ref(db, `${COLLECTION}/${u.uid}`));
+    await deleteDocument(COLLECTION, u.uid);
     toast("הרשומה נמחקה ממסד הנתונים", "success", 4000);
     toast("הערה: יש למחוק את חשבון ה-Auth ידנית מ-Firebase Console", "info", 5000);
   } catch (e) { toast(e.message || "שגיאה", "error"); }
@@ -301,10 +305,9 @@ async function onResetPassword(u) {
 // Helper: ensures the super admin has a /users record (auto-created at login).
 export async function ensureSuperAdminProfile(fbUser) {
   if (!isSuperAdminEmail(fbUser.email)) return;
-  const r = ref(db, `${COLLECTION}/${fbUser.uid}`);
-  const snap = await get(r);
-  if (!snap.exists()) {
-    await set(r, {
+  const profile = await getDocument(COLLECTION, fbUser.uid);
+  if (!profile) {
+    await createDocument(COLLECTION, {
       name: fbUser.displayName || "מנהל על",
       employeeNumber: "",
       email: fbUser.email,
@@ -312,12 +315,11 @@ export async function ensureSuperAdminProfile(fbUser) {
       isAdmin: true,
       isSuperAdmin: true,
       createdAt: new Date().toISOString()
-    });
+    }, fbUser.uid);
   } else {
     // Ensure flags are correct
-    const v = snap.val();
-    if (!v.isAdmin || !v.isSuperAdmin) {
-      await update(r, { isAdmin: true, isSuperAdmin: true });
+    if (!profile.isAdmin || !profile.isSuperAdmin) {
+      await updateDocument(COLLECTION, fbUser.uid, { isAdmin: true, isSuperAdmin: true });
     }
   }
 }

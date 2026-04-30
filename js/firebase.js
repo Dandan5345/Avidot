@@ -1,23 +1,22 @@
-// Firebase initialization (Realtime Database + Auth)
+// Firebase initialization (Firestore + Auth)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
-import { getDatabase } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-database.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyCnDspKbDjH50B9mIFlOfGnHFpNCT4ux20",
   authDomain: "avidot-4a18d.firebaseapp.com",
-  databaseURL: "https://avidot-4a18d-default-rtdb.firebaseio.com",
   projectId: "avidot-4a18d",
   storageBucket: "avidot-4a18d.firebasestorage.app",
   messagingSenderId: "1084515945555",
-  appId: "1:1084515945555:web:425c84b844985d6a92caa6",
-  measurementId: "G-6W49NJ9Q16"
+  appId: "1:1084515945555:web:9ba95fe805290c9692caa6",
+  measurementId: "G-T6ETZ7ZTDW"
 };
 
 // Primary app
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getDatabase(app);
+export const db = getFirestore(app);
 
 // Secondary app instance — used when admins create new users so the
 // admin's session is not replaced by the newly-created user.
