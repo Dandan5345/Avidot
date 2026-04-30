@@ -41,33 +41,70 @@ export async function uploadImageToImgBB(file) {
  * and shows a loading state; subsequent calls to getUrl() await it.
  */
 export function attachImageUpload(rootEl) {
-  const cameraInput = rootEl.querySelector(".file-camera");
-  const galleryInput = rootEl.querySelector(".file-gallery");
-  const btnCamera = rootEl.querySelector(".img-btn-camera");
-  const btnGallery = rootEl.querySelector(".img-btn-gallery");
+  const fileInput = rootEl.querySelector(".upload-input");
   const statusEl = rootEl.querySelector(".upload-status");
   const previewEl = rootEl.querySelector(".upload-preview");
+  const emptyEl = rootEl.querySelector(".upload-empty");
+  const fileNameEl = rootEl.querySelector(".upload-file-name");
+  const clearBtn = rootEl.querySelector(".upload-clear");
+  const sourceButtons = rootEl.querySelectorAll("[data-upload-source]");
 
   let uploadPromise = null;
   let uploadedUrl = null;
+  let localPreviewUrl = null;
 
-  function handleFile(file) {
+  function resetUi() {
+    if (localPreviewUrl) {
+      URL.revokeObjectURL(localPreviewUrl);
+      localPreviewUrl = null;
+    }
+    fileInput.value = "";
+    previewEl.style.display = "none";
+    previewEl.src = "";
+    emptyEl.classList.remove("hidden");
+    fileNameEl.textContent = "לא נבחרה תמונה";
+    statusEl.textContent = "";
+    statusEl.className = "upload-status";
+    clearBtn.classList.add("hidden");
     uploadedUrl = null;
     uploadPromise = null;
+  }
+
+  function formatFileSize(size) {
+    if (!Number.isFinite(size) || size <= 0) return "";
+    if (size < 1024 * 1024) return `${Math.round(size / 1024)}KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)}MB`;
+  }
+
+  sourceButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const source = button.getAttribute("data-upload-source");
+      if (source === "camera") fileInput.setAttribute("capture", "environment");
+      else fileInput.removeAttribute("capture");
+      fileInput.click();
+    });
+  });
+
+  clearBtn.addEventListener("click", () => {
+    resetUi();
+  });
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
     if (!file) {
-      statusEl.textContent = "";
-      statusEl.className = "upload-status";
-      previewEl.style.display = "none";
-      previewEl.src = "";
+      resetUi();
       return;
     }
-    // local preview
-    const reader = new FileReader();
-    reader.onload = () => {
-      previewEl.src = reader.result;
-      previewEl.style.display = "inline-block";
-    };
-    reader.readAsDataURL(file);
+
+    uploadedUrl = null;
+    uploadPromise = null;
+    if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
+    localPreviewUrl = URL.createObjectURL(file);
+    previewEl.src = localPreviewUrl;
+    previewEl.style.display = "block";
+    emptyEl.classList.add("hidden");
+    fileNameEl.textContent = `${file.name} · ${formatFileSize(file.size)}`;
+    clearBtn.classList.remove("hidden");
 
     statusEl.innerHTML = `<span class="spinner"></span> מעלה תמונה...`;
     statusEl.className = "upload-status";
@@ -85,29 +122,7 @@ export function attachImageUpload(rootEl) {
         throw err;
       }
     );
-  }
-
-  // Bind buttons to hidden inputs
-  if (btnCamera) btnCamera.addEventListener("click", () => cameraInput.click());
-  if (btnGallery) btnGallery.addEventListener("click", () => galleryInput.click());
-
-  if (cameraInput) {
-    cameraInput.addEventListener("change", () => {
-      const file = cameraInput.files && cameraInput.files[0];
-      handleFile(file);
-      // Clear value so the same file can be selected again if needed
-      cameraInput.value = "";
-    });
-  }
-
-  if (galleryInput) {
-    galleryInput.addEventListener("change", () => {
-      const file = galleryInput.files && galleryInput.files[0];
-      handleFile(file);
-      // Clear value so the same file can be selected again if needed
-      galleryInput.value = "";
-    });
-  }
+  });
 
   return {
     /** Awaits the in-flight upload (if any) and returns the URL or null. */
@@ -125,16 +140,31 @@ export function attachImageUpload(rootEl) {
 /** Returns HTML for an image-upload control. */
 export function imageUploadFieldHtml(label = "תמונה (אופציונלי)") {
   return `
-    <label class="field full">
+    <label class="field full upload-field">
       <span>${label}</span>
-      <div class="upload-row">
-        <div class="upload-buttons">
-          <button type="button" class="btn img-btn-camera">📷 צלם עכשיו</button>
-          <button type="button" class="btn img-btn-gallery">🖼️ בחר מגלריה</button>
+      <div class="upload-card">
+        <input class="upload-input hidden" type="file" accept="image/*" />
+        <div class="upload-source-actions">
+          <button type="button" class="upload-choice primary" data-upload-source="camera">
+            <strong>צלם עכשיו</strong>
+            <small>פתיחת מצלמה ישירות מהמכשיר</small>
+          </button>
+          <button type="button" class="upload-choice" data-upload-source="gallery">
+            <strong>בחר מהגלריה</strong>
+            <small>בחירת תמונה קיימת מהטלפון או המחשב</small>
+          </button>
         </div>
-        <input type="file" class="hidden file-camera" accept="image/*" capture="environment" />
-        <input type="file" class="hidden file-gallery" accept="image/*" />
-        <img class="upload-preview" alt="" style="display:none" />
+        <div class="upload-preview-wrap">
+          <div class="upload-empty">
+            <strong>עדיין לא נבחרה תמונה</strong>
+            <span>אפשר לצלם במקום או לבחור תמונה קיימת.</span>
+          </div>
+          <img class="upload-preview" alt="תצוגה מקדימה של התמונה שנבחרה" />
+        </div>
+        <div class="upload-meta">
+          <span class="upload-file-name">לא נבחרה תמונה</span>
+          <button type="button" class="upload-clear hidden">נקה</button>
+        </div>
         <span class="upload-status"></span>
       </div>
     </label>`;

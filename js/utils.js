@@ -85,10 +85,18 @@ export function openModal({ title, bodyHtml = "", footerButtons = [], large = fa
   if (typeof bodyHtml === "string") bodyEl.innerHTML = bodyHtml;
   else if (bodyHtml instanceof Node) bodyEl.appendChild(bodyHtml);
 
+  if (bodyEl.querySelector("form")) modalEl.classList.add("modal-has-form");
+  if (bodyEl.querySelector(".table-wrap")) modalEl.classList.add("modal-has-table");
+
   let closed = false;
+  const escListener = (e) => {
+    if (e.key === "Escape") close();
+  };
+
   function close() {
     if (closed) return;
     closed = true;
+    document.removeEventListener("keydown", escListener);
     backdrop.remove();
     if (typeof onClose === "function") onClose();
   }
@@ -97,12 +105,7 @@ export function openModal({ title, bodyHtml = "", footerButtons = [], large = fa
   backdrop.addEventListener("click", (e) => {
     if (e.target === backdrop) close();
   });
-  document.addEventListener("keydown", function escListener(e) {
-    if (e.key === "Escape") {
-      close();
-      document.removeEventListener("keydown", escListener);
-    }
-  });
+  document.addEventListener("keydown", escListener);
 
   for (const btn of footerButtons) {
     const b = document.createElement("button");
@@ -124,8 +127,8 @@ export function confirmDialog({ title = "אישור", message = "", confirmText 
       title,
       bodyHtml: `<p style="margin:0;font-size:15px;">${escapeHtml(message)}</p>`,
       footerButtons: [
-        { label: cancelText, className: "btn-secondary", onClick: ({ close }) => { close(); resolve(false); } },
-        { label: confirmText, className: danger ? "btn-danger" : "btn-success", onClick: ({ close }) => { close(); resolve(true); } }
+        { label: cancelText, className: "btn-secondary", onClick: ({ close }) => { resolve(false); close(); } },
+        { label: confirmText, className: danger ? "btn-danger" : "btn-success", onClick: ({ close }) => { resolve(true); close(); } }
       ],
       onClose: () => resolve(false)
     });
@@ -145,12 +148,14 @@ export function promptDialog({ title = "הזנת ערך", label = "", placeholde
           <input id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(defaultValue)}" />
         </label>`,
       footerButtons: [
-        { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => { close(); resolve(null); } },
-        { label: "אישור", className: "btn-success", onClick: ({ close, body }) => {
+        { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => { resolve(null); close(); } },
+        {
+          label: "אישור", className: "btn-success", onClick: ({ close, body }) => {
             const v = body.querySelector(`#${id}`).value.trim();
-            close();
             resolve(v);
-          } }
+            close();
+          }
+        }
       ],
       onClose: () => resolve(null)
     });

@@ -17,25 +17,29 @@ export function renderHome(container) {
         </div>
       </div>
       <div class="home-content">
-        <p class="muted center-text" style="font-size:16px; margin: 10px 0 24px;">בחר קטגוריה להמשך פעולה:</p>
+        <p class="home-intro muted center-text">בחר קטגוריה להמשך פעולה:</p>
         <div class="home-grid">
           <div class="home-card modern-card" data-route="lost-items">
+            <span class="home-card-tag">תפעול שוטף</span>
             <div class="icon-wrap"><div class="icon">🎒</div></div>
             <h3>אבידות</h3>
             <p>רישום וניהול אבידות שנמצאו במלון</p>
           </div>
           <div class="home-card modern-card" data-route="pending-pickup">
+            <span class="home-card-tag">קבלת בעלים</span>
             <div class="icon-wrap"><div class="icon">📦</div></div>
             <h3>ממתינות לאיסוף</h3>
             <p>אבידות שהבעלים יבוא לאסוף</p>
           </div>
           <div class="home-card modern-card" data-route="awaiting-info">
+            <span class="home-card-tag">טיפול חסר</span>
             <div class="icon-wrap"><div class="icon">⏳</div></div>
             <h3>שמחכות למידע</h3>
             <p>אבידות הממתינות להשלמת פרטים</p>
           </div>
           ${showAhmash ? `
             <div class="home-card modern-card ahmash-card" data-route="manager-actions">
+              <span class="home-card-tag">ניהול אחמ"ש</span>
               <div class="icon-wrap"><div class="icon">🗂️</div></div>
               <h3>משיכת / מחיקת אבידות</h3>
               <p>פעולות אחמ"ש: תרומה / מחיקה</p>
