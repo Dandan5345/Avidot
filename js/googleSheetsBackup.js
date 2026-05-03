@@ -114,6 +114,8 @@ async function syncLostItemsFullSnapshot(items) {
     return;
   }
 
+  // Keep full-sync chunks sequential so the Apps Script endpoint receives
+  // a predictable order and avoids burst traffic when an entire sheet is rebuilt.
   for (let index = 0; index < chunks.length; index += 1) {
     await postLostItemsSync({
       source: "firestore-client",
@@ -156,6 +158,8 @@ export async function syncLostItemsDeleteBatchSafe(items, { silent = false } = {
   const validItems = (items || []).filter((item) => item?.id);
   try {
     const chunks = chunkItems(validItems, DELETE_SYNC_BATCH_SIZE);
+    // Delete updates stay in small parallel groups because each payload is a
+    // single item, unlike full_sync which already batches 100 records per request.
     for (const chunk of chunks) {
       await Promise.all(chunk.map((item) => syncLostItemChange(item, { deleted: true })));
     }

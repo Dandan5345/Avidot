@@ -69,7 +69,9 @@ export async function createItem(collectionName, data) {
 export async function updateItem(collectionName, id, patch, { existingItem = null } = {}) {
   await updateDocument(collectionName, id, patch);
   if (collectionName === "lostItems") {
-    const updated = mergeItemPatch(existingItem, patch) || await getDocument(collectionName, id);
+    const updated = existingItem
+      ? mergeItemPatch(existingItem, patch)
+      : await getDocument(collectionName, id);
     if (updated) await syncLostItemUpsertSafe(updated);
   }
 }
