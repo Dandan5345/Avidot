@@ -76,7 +76,7 @@ async function postLostItemsSync(payload) {
   const response = await fetch(GOOGLE_SHEETS_WEB_APP_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json; charset=utf-8"
+      "Content-Type": "text/plain; charset=utf-8"
     },
     body: JSON.stringify(payload)
   });

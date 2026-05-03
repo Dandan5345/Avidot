@@ -1916,71 +1916,54 @@ hr.sep {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .table-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 22px;
+    -webkit-overflow-scrolling: touch;
+  }
+
   table.data.responsive-table {
-    min-width: 0;
+    min-width: 820px;
   }
 
   table.data.responsive-table thead {
-    display: none;
+    display: table-header-group;
   }
 
-  table.data.responsive-table,
-  table.data.responsive-table tbody,
-  table.data.responsive-table tr,
-  table.data.responsive-table td {
-    display: block;
+  table.data.responsive-table {
+    display: table;
     width: 100%;
   }
 
   table.data.responsive-table tbody {
-    display: grid;
-    gap: 12px;
+    display: table-row-group;
   }
 
-  table.data.responsive-table tbody tr {
-    padding: 12px 14px;
-    border: 1px solid rgba(88, 119, 168, 0.12);
-    border-radius: 22px;
-    background: rgba(255, 255, 255, 0.94);
-    box-shadow: var(--shadow-sm);
-    animation: slideUp 0.24s ease both;
+  table.data.responsive-table tr {
+    display: table-row;
   }
 
-  table.data.responsive-table tbody tr:nth-child(even) {
-    background: rgba(248, 252, 255, 0.96);
+  table.data.responsive-table th {
+    display: table-cell;
+    white-space: nowrap;
   }
 
   table.data.responsive-table td {
-    display: grid;
-    grid-template-columns: minmax(92px, 104px) 1fr;
-    gap: 10px;
-    padding: 8px 0;
-    border-bottom: 1px dashed rgba(88, 119, 168, 0.12);
-    text-align: right;
-    white-space: normal;
+    display: table-cell;
   }
 
-  table.data.responsive-table td:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
+  table.data.responsive-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(88, 119, 168, 0.1);
   }
 
   table.data.responsive-table td::before {
-    content: attr(data-label);
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 800;
+    content: none;
   }
 
   .actions-cell {
-    display: flex !important;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .actions-cell::before {
-    width: 100%;
+    white-space: nowrap;
   }
 
   .log-facts-grid {
@@ -2120,9 +2103,8 @@ hr.sep {
     grid-template-columns: 1fr;
   }
 
-  table.data.responsive-table td {
-    grid-template-columns: 1fr;
-    gap: 4px;
+  .table-wrap {
+    border-radius: 18px;
   }
 }
 

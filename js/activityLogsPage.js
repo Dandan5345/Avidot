@@ -7,6 +7,13 @@ let allLogs = [];
 let hasLoadedSnapshot = false;
 let loadError = "";
 let viewState = { search: "", actor: "", date: "" };
+const VISIBLE_LOG_ACTION_PREFIXES = [
+    "item.create.",
+    "item.delete.",
+    "item.return.",
+    "item.transfer.",
+    "manager.fetch."
+];
 
 export function renderActivityLogsPage(container) {
     if (!isAdmin()) {
@@ -68,7 +75,7 @@ export function renderActivityLogsPage(container) {
     });
 
     unsubscribe = subscribeActivityLogs((logs) => {
-        allLogs = logs;
+        allLogs = logs.filter(shouldDisplayLog);
         hasLoadedSnapshot = true;
         loadError = "";
         render(container);
@@ -125,9 +132,11 @@ function renderActorOptions(logs, selectedActor) {
 }
 
 function renderSummary(logs) {
-    const itemChanges = logs.filter((log) => log.entityType === "item").length;
-    const userChanges = logs.filter((log) => log.entityType === "user").length;
-    const moveChanges = logs.filter((log) => String(log.action || "").includes("transfer")).length;
+    const createdCount = logs.filter((log) => String(log.action || "").includes("item.create.")).length;
+    const deletedCount = logs.filter((log) => String(log.action || "").includes("item.delete.")).length;
+    const returnedCount = logs.filter((log) => String(log.action || "").includes("item.return.")).length;
+    const moveChanges = logs.filter((log) => String(log.action || "").includes("item.transfer.")).length;
+    const withdrawalsCount = logs.filter((log) => String(log.action || "").includes("manager.fetch.")).length;
     const latest = logs[0]?.createdAt ? formatDateTime(logs[0].createdAt) : "-";
 
     return `
@@ -136,16 +145,24 @@ function renderSummary(logs) {
       <span>סה"כ פעולות מוצגות</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${itemChanges}</strong>
-      <span>פעולות על אבידות</span>
+      <strong>${createdCount}</strong>
+      <span>הוספות אבידה</span>
+    </div>
+    <div class="log-summary-card section-card">
+      <strong>${deletedCount}</strong>
+      <span>מחיקות אבידה</span>
+    </div>
+    <div class="log-summary-card section-card">
+      <strong>${returnedCount}</strong>
+      <span>החזרות אבידה</span>
+    </div>
+    <div class="log-summary-card section-card">
+      <strong>${withdrawalsCount}</strong>
+      <span>משיכות</span>
     </div>
     <div class="log-summary-card section-card">
       <strong>${moveChanges}</strong>
-      <span>העברות בין דפים</span>
-    </div>
-    <div class="log-summary-card section-card">
-      <strong>${userChanges}</strong>
-      <span>פעולות על משתמשים</span>
+      <span>העברות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
       <strong>${escapeHtml(latest)}</strong>
@@ -251,4 +268,9 @@ function actionLabel(action) {
     if (action.includes("print")) return "הדפסה";
     if (action.includes("sort")) return "מיון";
     return action;
+}
+
+function shouldDisplayLog(log) {
+    const action = String(log?.action || "");
+    return VISIBLE_LOG_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
 }
