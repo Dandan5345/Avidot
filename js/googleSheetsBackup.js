@@ -173,7 +173,7 @@ export async function syncLostItemsDeleteBatchSafe(items, { silent = false } = {
 export async function syncLostItemsFullSnapshotSafe(items, { force = false, silent = true } = {}) {
   const now = Date.now();
   const lastSyncAt = Number(localStorage.getItem(LAST_FULL_SYNC_KEY) || 0);
-  if (!force && lastSyncAt && now - lastSyncAt < FULL_SYNC_COOLDOWN_MS) return false;
+  if (!force && now - lastSyncAt < FULL_SYNC_COOLDOWN_MS) return false;
 
   try {
     await syncLostItemsFullSnapshot(items);

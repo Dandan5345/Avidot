@@ -27,7 +27,7 @@ function mergeItemPatch(item, patch) {
   return item ? { ...item, ...patch, id: item.id } : null;
 }
 
-async function fetchDocumentsByIdsSequentially(collectionName, ids, chunkSize = 25) {
+async function fetchDocumentsByIdsInChunks(collectionName, ids, chunkSize = 25) {
   const results = [];
   for (let index = 0; index < ids.length; index += chunkSize) {
     const chunk = ids.slice(index, index + chunkSize);
@@ -93,10 +93,10 @@ export async function deleteItemsBatch(collectionName, itemsOrIds) {
   if (collectionName === "lostItems") {
     const objectEntries = normalizedEntries.filter((entry) => typeof entry === "object");
     const missingIds = normalizedEntries
-      .filter((entry) => typeof entry !== "object")
+      .filter((entry) => typeof entry === "string")
       .map(normalizeBatchEntryId)
       .filter(Boolean);
-    const missingItems = await fetchDocumentsByIdsSequentially(collectionName, missingIds);
+    const missingItems = await fetchDocumentsByIdsInChunks(collectionName, missingIds);
     deletedItems = objectEntries.concat(missingItems).filter((item) => item?.id);
   }
 
