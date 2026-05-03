@@ -1,0 +1,21 @@
+{
+    "name": "אבידות ומציאות - מלון ממילא",
+    "short_name": "אבידות",
+    "description": "מערכת ניהול אבידות ומציאות למחלקת הביטחון של מלון ממילא.",
+    "lang": "he",
+    "dir": "rtl",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#10242b",
+    "theme_color": "#163844",
+    "icons": [
+        {
+            "src": "icons/app-icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

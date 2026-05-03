@@ -25,7 +25,19 @@ let currentTeardown = null;
 let isSignedIn = false;
 let lastRouteLog = { route: "", at: 0 };
 
+registerServiceWorker();
+
 appEl.innerHTML = `<div class="section-card"><p>טוען...</p></div>`;
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register(new URL("../sw.js", import.meta.url), { scope: "./" })
+      .catch((error) => console.warn("[pwa] service worker registration failed:", error));
+  }, { once: true });
+}
 
 function currentRoute() {
   const h = location.hash || "";

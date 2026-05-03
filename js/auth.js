@@ -1,8 +1,10 @@
 // Authentication / current user state and login screen.
 import {
+  browserLocalPersistence,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  setPersistence
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, isSuperAdminEmail } from "./firebase.js";
 import { getDocument } from "./firestoreStore.js";
@@ -23,6 +25,7 @@ export const currentUser = {
 
 const PROFILE_LOAD_TIMEOUT_MS = 8000;
 let authStateVersion = 0;
+const authPersistenceReady = ensureAuthPersistence();
 
 const listeners = new Set();
 export function onUserChange(fn) {
@@ -30,6 +33,14 @@ export function onUserChange(fn) {
   return () => listeners.delete(fn);
 }
 function notify() { for (const fn of listeners) try { fn(currentUser); } catch (_) { } }
+
+async function ensureAuthPersistence() {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch (error) {
+    console.warn("[auth] failed to enable local persistence:", error);
+  }
+}
 
 export function isAdmin() { return !!(currentUser.isAdmin || currentUser.isSuperAdmin); }
 export function isAhmash() { return currentUser.role === "ahmash" || isAdmin(); }
@@ -121,27 +132,29 @@ export function clearCurrentUser() {
 }
 
 export function watchAuth(onSignedIn, onSignedOut) {
-  onAuthStateChanged(auth, async (fbUser) => {
-    const currentVersion = ++authStateVersion;
+  void authPersistenceReady.finally(() => {
+    onAuthStateChanged(auth, async (fbUser) => {
+      const currentVersion = ++authStateVersion;
 
-    if (fbUser) {
-      applyFallbackProfile(fbUser);
+      if (fbUser) {
+        applyFallbackProfile(fbUser);
 
-      try {
-        if (onSignedIn) await onSignedIn(currentUser);
-      } catch (e) {
-        console.error("[auth] signed-in handler failed:", e);
+        try {
+          if (onSignedIn) await onSignedIn(currentUser);
+        } catch (e) {
+          console.error("[auth] signed-in handler failed:", e);
+        }
+
+        refreshUserProfileInBackground(fbUser, currentVersion);
+      } else {
+        clearCurrentUser();
+        try {
+          if (onSignedOut) onSignedOut();
+        } catch (e) {
+          console.error("[auth] signed-out handler failed:", e);
+        }
       }
-
-      refreshUserProfileInBackground(fbUser, currentVersion);
-    } else {
-      clearCurrentUser();
-      try {
-        if (onSignedOut) onSignedOut();
-      } catch (e) {
-        console.error("[auth] signed-out handler failed:", e);
-      }
-    }
+    });
   });
 }
 
@@ -153,23 +166,44 @@ export async function logout() {
 export function renderLogin(container) {
   container.innerHTML = `
     <div class="login-wrap">
-      <form class="login-card" id="loginForm" autocomplete="on">
-        <h1>מערכת אבידות ומציאות</h1>
-        <p class="sub">מחלקת ביטחון – מלון</p>
-        <div id="loginError" class="login-error" style="display:none"></div>
-        <label class="field">
-          <span>אימייל</span>
-          <input type="email" id="loginEmail" required autocomplete="email" />
-        </label>
-        <label class="field">
-          <span>סיסמה</span>
-          <input type="password" id="loginPassword" required autocomplete="current-password" />
-        </label>
-        <button class="btn btn-block" type="submit" id="loginBtn">התחבר</button>
-        <p class="muted" style="margin-top:14px;text-align:center">
-          אין הרשמה פתוחה. משתמשים נוצרים על ידי מנהל בלבד.
-        </p>
-      </form>
+      <div class="login-shell">
+        <section class="login-showcase">
+          <span class="login-kicker">Mamilla Hotel Jerusalem</span>
+          <h2>מערכת עבודה מלאה למחלקת הביטחון</h2>
+          <p>רישום, מעקב ומסירה של אבידות ומציאות בממשק אחיד שמותאם גם לעבודה נוחה ממחשב.</p>
+          <div class="login-highlights">
+            <article class="login-highlight">
+              <strong>מסך עבודה רחב</strong>
+              <span>טבלאות, כרטיסים ופעולות מהירות מוצגים נכון גם במסכי דסקטופ.</span>
+            </article>
+            <article class="login-highlight">
+              <strong>תיעוד מהיר</strong>
+              <span>שמירת פרטים, צילום פריטים ומעקב שוטף מתוך אפליקציית ווב אחת.</span>
+            </article>
+            <article class="login-highlight">
+              <strong>ממשק ממותג</strong>
+              <span>מעטפת חזותית המבוססת על מלון ממילא עם רקע מלא וקונטיינרים נוחים לקריאה.</span>
+            </article>
+          </div>
+        </section>
+        <form class="login-card" id="loginForm" autocomplete="on">
+          <h1>מערכת אבידות ומציאות</h1>
+          <p class="sub">מחלקת ביטחון – מלון ממילא ירושלים</p>
+          <div id="loginError" class="login-error" style="display:none"></div>
+          <label class="field">
+            <span>אימייל</span>
+            <input type="email" id="loginEmail" required autocomplete="email" />
+          </label>
+          <label class="field">
+            <span>סיסמה</span>
+            <input type="password" id="loginPassword" required autocomplete="current-password" />
+          </label>
+          <button class="btn btn-block" type="submit" id="loginBtn">התחבר</button>
+          <p class="muted" style="margin-top:14px;text-align:center">
+            אין הרשמה פתוחה. משתמשים נוצרים על ידי מנהל בלבד.
+          </p>
+        </form>
+      </div>
     </div>
   `;
 
@@ -186,6 +220,7 @@ export function renderLogin(container) {
     btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
     console.log("[login] attempting sign-in for", email);
     try {
+      await authPersistenceReady;
       await signInWithEmailAndPassword(auth, email, password);
       console.log("[login] sign-in succeeded");
     } catch (err) {

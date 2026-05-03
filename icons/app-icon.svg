@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Avidot App Icon</title>
+  <desc id="desc">Rounded app icon with a hotel lobby inspired palette and a luggage symbol.</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" x2="448" y1="48" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0f2d36"/>
+      <stop offset="0.52" stop-color="#1d5c6f"/>
+      <stop offset="1" stop-color="#d4b37a"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="166" x2="366" y1="120" y2="356" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#d8edf4" stop-opacity="0.88"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  <circle cx="386" cy="126" r="70" fill="#ffffff" fill-opacity="0.08"/>
+  <circle cx="114" cy="392" r="92" fill="#ffffff" fill-opacity="0.08"/>
+  <path d="M158 202c0-54 44-98 98-98s98 44 98 98v22h10c22 0 40 18 40 40v96c0 26-22 48-48 48H156c-26 0-48-22-48-48v-96c0-22 18-40 40-40h10zm54 0v22h88v-22c0-30-24-54-44-54s-44 24-44 54z" fill="url(#glass)"/>
+  <path d="M156 248h200c8 0 14 6 14 14v98c0 8-6 14-14 14H156c-8 0-14-6-14-14v-98c0-8 6-14 14-14z" fill="#0f3440" fill-opacity="0.16"/>
+  <path d="M196 290h120" stroke="#1b5465" stroke-width="24" stroke-linecap="round"/>
+  <path d="M256 268v44" stroke="#1b5465" stroke-width="24" stroke-linecap="round"/>
+</svg>
