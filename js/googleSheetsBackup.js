@@ -3,6 +3,7 @@ import { toast } from "./utils.js";
 const GOOGLE_SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzY2kLjZYsJCgWXChCZz9KA8IcLTan8k3i-y-k0DUjCzUwrFt8qLTRgQFqBwSHxc_p4/exec";
 const LOST_ITEMS_COLLECTION = "lostItems";
 const FULL_SYNC_BATCH_SIZE = 100;
+const DELETE_SYNC_BATCH_SIZE = 10;
 const FULL_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 const LAST_FULL_SYNC_KEY = "lostItemsGoogleSheets:lastFullSyncAt";
 
@@ -154,7 +155,7 @@ export async function syncLostItemDeleteSafe(item, { silent = false } = {}) {
 export async function syncLostItemsDeleteBatchSafe(items, { silent = false } = {}) {
   const validItems = (items || []).filter((item) => item?.id);
   try {
-    const chunks = chunkItems(validItems, 10);
+    const chunks = chunkItems(validItems, DELETE_SYNC_BATCH_SIZE);
     for (const chunk of chunks) {
       await Promise.all(chunk.map((item) => syncLostItemChange(item, { deleted: true })));
     }
@@ -167,12 +168,12 @@ export async function syncLostItemsDeleteBatchSafe(items, { silent = false } = {
 
 export async function syncLostItemsFullSnapshotSafe(items, { force = false, silent = true } = {}) {
   const now = Date.now();
-  const lastSyncAt = Number(sessionStorage.getItem(LAST_FULL_SYNC_KEY) || 0);
+  const lastSyncAt = Number(localStorage.getItem(LAST_FULL_SYNC_KEY) || 0);
   if (!force && lastSyncAt && now - lastSyncAt < FULL_SYNC_COOLDOWN_MS) return false;
 
   try {
     await syncLostItemsFullSnapshot(items);
-    sessionStorage.setItem(LAST_FULL_SYNC_KEY, String(now));
+    localStorage.setItem(LAST_FULL_SYNC_KEY, String(now));
     return true;
   } catch (error) {
     notifySyncFailure("האבידות נטענו, אבל הגיבוי המלא ל-Google Sheets נכשל", error, { silent });

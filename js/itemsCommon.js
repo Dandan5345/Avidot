@@ -23,6 +23,20 @@ function normalizeBatchEntryId(entry) {
   return typeof entry === "string" ? entry : entry?.id;
 }
 
+function mergeItemPatch(item, patch) {
+  return item ? { ...item, ...patch, id: item.id } : null;
+}
+
+async function fetchDocumentsByIdsSequentially(collectionName, ids, chunkSize = 25) {
+  const results = [];
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const chunk = ids.slice(index, index + chunkSize);
+    const docs = await Promise.all(chunk.map((id) => getDocument(collectionName, id)));
+    results.push(...docs.filter((item) => item?.id));
+  }
+  return results;
+}
+
 /**
  * Get the next item number for a given collection. We don't strictly rely
  * on a counter (the counter can be reset to 0 — that's why duplicates are
@@ -52,10 +66,10 @@ export async function createItem(collectionName, data) {
   return id;
 }
 
-export async function updateItem(collectionName, id, patch) {
+export async function updateItem(collectionName, id, patch, { existingItem = null } = {}) {
   await updateDocument(collectionName, id, patch);
   if (collectionName === "lostItems") {
-    const updated = await getDocument(collectionName, id);
+    const updated = mergeItemPatch(existingItem, patch) || await getDocument(collectionName, id);
     if (updated) await syncLostItemUpsertSafe(updated);
   }
 }
@@ -80,7 +94,7 @@ export async function deleteItemsBatch(collectionName, itemsOrIds) {
       .filter((entry) => typeof entry !== "object")
       .map(normalizeBatchEntryId)
       .filter(Boolean);
-    const missingItems = await Promise.all(missingIds.map((id) => getDocument(collectionName, id)));
+    const missingItems = await fetchDocumentsByIdsSequentially(collectionName, missingIds);
     deletedItems = objectEntries.concat(missingItems).filter((item) => item?.id);
   }
 

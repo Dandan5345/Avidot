@@ -580,7 +580,7 @@ function openReturnFormModal(item) {
                 returnedBy: currentUser.uid || null,
                 signatureUrl
               }
-            });
+            }, { existingItem: item });
             void logActivitySafe({
               action: "item.return.lost",
               entityType: "item",
