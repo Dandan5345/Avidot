@@ -19,6 +19,10 @@ import {
   syncLostItemsDeleteBatchSafe
 } from "./googleSheetsBackup.js";
 
+function normalizeBatchEntryId(entry) {
+  return typeof entry === "string" ? entry : entry?.id;
+}
+
 /**
  * Get the next item number for a given collection. We don't strictly rely
  * on a counter (the counter can be reset to 0 — that's why duplicates are
@@ -65,16 +69,19 @@ export async function deleteItem(collectionName, id) {
 }
 
 export async function deleteItemsBatch(collectionName, itemsOrIds) {
-  const ids = (itemsOrIds || []).map((entry) => typeof entry === "string" ? entry : entry?.id).filter(Boolean);
+  const normalizedEntries = (itemsOrIds || []).filter(Boolean);
+  const ids = normalizedEntries.map(normalizeBatchEntryId).filter(Boolean);
   if (!ids.length) return;
 
   let deletedItems = [];
   if (collectionName === "lostItems") {
-    deletedItems = await Promise.all((itemsOrIds || []).map(async (entry) => {
-      if (entry && typeof entry === "object") return entry;
-      return getDocument(collectionName, entry);
-    }));
-    deletedItems = deletedItems.filter((item) => item?.id);
+    const objectEntries = normalizedEntries.filter((entry) => typeof entry === "object");
+    const missingIds = normalizedEntries
+      .filter((entry) => typeof entry !== "object")
+      .map(normalizeBatchEntryId)
+      .filter(Boolean);
+    const missingItems = await Promise.all(missingIds.map((id) => getDocument(collectionName, id)));
+    deletedItems = objectEntries.concat(missingItems).filter((item) => item?.id);
   }
 
   await deleteDocumentsBatch(collectionName, ids);

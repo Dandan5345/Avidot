@@ -154,8 +154,9 @@ export async function syncLostItemDeleteSafe(item, { silent = false } = {}) {
 export async function syncLostItemsDeleteBatchSafe(items, { silent = false } = {}) {
   const validItems = (items || []).filter((item) => item?.id);
   try {
-    for (const item of validItems) {
-      await syncLostItemChange(item, { deleted: true });
+    const chunks = chunkItems(validItems, 10);
+    for (const chunk of chunks) {
+      await Promise.all(chunk.map((item) => syncLostItemChange(item, { deleted: true })));
     }
     return true;
   } catch (error) {
