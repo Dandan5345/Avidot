@@ -93,18 +93,22 @@ function buildLostItemSyncRecord(itemId, itemData = {}, { deleted = false, synce
 }
 
 async function postLostItemsSync(payload) {
-    const response = await fetch(requiredGoogleSheetsScriptUrl(), {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json; charset=utf-8"
-        },
-        body: JSON.stringify(payload)
-    });
-    const responseText = await response.text();
-    if (!response.ok) {
-        throw new Error(`Google Sheets sync failed (${response.status}): ${truncateForError(responseText)}`);
+    try {
+        const response = await fetch(requiredGoogleSheetsScriptUrl(), {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json; charset=utf-8"
+            },
+            body: JSON.stringify(payload)
+        });
+        const responseText = await response.text();
+        if (!response.ok) {
+            throw new Error(`Google Sheets sync failed (${response.status}): ${truncateForError(responseText)}`);
+        }
+        return responseText;
+    } catch (error) {
+        throw new Error(`Google Sheets sync request failed for action "${payload.action}": ${error.message}`);
     }
-    return responseText;
 }
 
 function chunkItems(items, size) {
@@ -150,16 +154,25 @@ async function syncAllLostItemsSnapshot() {
     // Keep chunk delivery sequential so Apps Script receives predictable order
     // and does not hit burst limits during a full backfill.
     for (let index = 0; index < chunks.length; index += 1) {
-        await postLostItemsSync({
-            source: "firebase-functions",
-            projectId: process.env.GCLOUD_PROJECT || "",
-            action: "full_sync",
-            collection: LOST_ITEMS_COLLECTION,
-            syncedAt,
-            items: chunks[index],
-            chunkIndex: index + 1,
-            chunkCount: chunks.length
-        });
+        try {
+            await postLostItemsSync({
+                source: "firebase-functions",
+                projectId: process.env.GCLOUD_PROJECT || "",
+                action: "full_sync",
+                collection: LOST_ITEMS_COLLECTION,
+                syncedAt,
+                items: chunks[index],
+                chunkIndex: index + 1,
+                chunkCount: chunks.length
+            });
+        } catch (error) {
+            console.error("[lost-items-sync] full sync chunk failed", {
+                chunkIndex: index + 1,
+                chunkCount: chunks.length,
+                error: error.message
+            });
+            throw error;
+        }
     }
 
     return items.length;
@@ -285,11 +298,20 @@ exports.syncLostItemsToGoogleSheets = onDocumentWritten({
     const itemId = event.params.itemId;
     const afterData = event.data.after.exists ? event.data.after.data() : null;
 
-    await syncSingleLostItemChange({
-        itemId,
-        itemData: afterData || (event.data.before.exists ? event.data.before.data() : {}),
-        deleted: !afterData
-    });
+    try {
+        await syncSingleLostItemChange({
+            itemId,
+            itemData: afterData || (event.data.before.exists ? event.data.before.data() : {}),
+            deleted: !afterData
+        });
+    } catch (error) {
+        console.error("[lost-items-sync] item sync failed", {
+            itemId,
+            action: afterData ? "upsert" : "delete",
+            error: error.message
+        });
+        throw error;
+    }
 });
 
 exports.syncLostItemsFullBackup = onSchedule({
