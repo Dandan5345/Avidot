@@ -30,7 +30,7 @@ function normalizeOptionalString(value) {
 function requiredGoogleSheetsScriptUrl() {
     const url = normalizedString(process.env.GOOGLE_SHEETS_SCRIPT_URL);
     if (!url) {
-        throw new Error("Missing GOOGLE_SHEETS_SCRIPT_URL environment variable");
+        throw new Error("Missing GOOGLE_SHEETS_SCRIPT_URL environment variable for the Google Apps Script web app endpoint. See README.");
     }
     return url;
 }
@@ -315,6 +315,7 @@ exports.syncLostItemsToGoogleSheets = onDocumentWritten({
 });
 
 exports.syncLostItemsFullBackup = onSchedule({
+    // Runs every 6 hours.
     schedule: "0 */6 * * *",
     timeZone: "Asia/Jerusalem",
     region: "europe-west1"
