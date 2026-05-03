@@ -109,8 +109,8 @@ async function postLostItemsSync(payload) {
 
 function chunkItems(items, size) {
     const chunks = [];
-    for (let chunkStart = 0; chunkStart < items.length; chunkStart += size) {
-        chunks.push(items.slice(chunkStart, chunkStart + size));
+    for (let start = 0; start < items.length; start += size) {
+        chunks.push(items.slice(start, start + size));
     }
     return chunks;
 }
@@ -284,11 +284,10 @@ exports.syncLostItemsToGoogleSheets = onDocumentWritten({
 }, async (event) => {
     const itemId = event.params.itemId;
     const afterData = event.data.after.exists ? event.data.after.data() : null;
-    const beforeData = event.data.before.exists ? event.data.before.data() : null;
 
     await syncSingleLostItemChange({
         itemId,
-        itemData: afterData || beforeData || {},
+        itemData: afterData || (event.data.before.exists ? event.data.before.data() : {}),
         deleted: !afterData
     });
 });
