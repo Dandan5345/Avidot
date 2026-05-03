@@ -72,6 +72,11 @@ function normalizeReturnDetails(returnDetails = {}) {
 }
 
 function buildLostItemRawSnapshot(item = {}, { deleted = false, syncedAt } = {}) {
+  const returnDetails = normalizeReturnDetails(item.returnDetails || {});
+  const returned = normalizeOptionalBoolean(item.returned);
+  const status = deleted ? "deleted" : (returned ? "returned" : "active");
+  const statusLabel = deleted ? "נמחקה" : (returned ? "הוחזרה לבעל האבידה" : "פעילה");
+
   return {
     id: normalizeOptionalString(item.id),
     collection: LOST_ITEMS_COLLECTION,
@@ -82,6 +87,7 @@ function buildLostItemRawSnapshot(item = {}, { deleted = false, syncedAt } = {})
     foundLocation: normalizeOptionalString(item.foundLocation),
     storageLocation: normalizeOptionalString(item.storageLocation),
     storageOther: normalizeOptionalString(item.storageOther),
+    storageDisplay: storageDisplayValue(item),
     finderName: normalizeOptionalString(item.finderName),
     finderDept: normalizeOptionalString(item.finderDept),
     finderUnknown: normalizeOptionalBoolean(item.finderUnknown),
@@ -92,8 +98,16 @@ function buildLostItemRawSnapshot(item = {}, { deleted = false, syncedAt } = {})
     ownerPhone: normalizeOptionalString(item.ownerPhone),
     ownerId: normalizeOptionalString(item.ownerId),
     photoUrl: normalizeOptionalString(item.photoUrl),
-    returned: normalizeOptionalBoolean(item.returned),
-    returnDetails: normalizeReturnDetails(item.returnDetails || {}),
+    returned,
+    status,
+    statusLabel,
+    returnReceiverName: returnDetails.receiverName,
+    returnReceiverContact: returnDetails.receiverContact,
+    returnHandlerName: returnDetails.handlerName,
+    returnReturnedAt: returnDetails.returnedAt,
+    returnReturnedBy: returnDetails.returnedBy,
+    returnSignatureUrl: returnDetails.signatureUrl,
+    returnDetails,
     createdAt: normalizeOptionalString(item.createdAt),
     createdBy: normalizeOptionalString(item.createdBy),
     createdByName: normalizeOptionalString(item.createdByName),
