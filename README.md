@@ -106,7 +106,7 @@ firebase deploy --only hosting,database
 - כל יצירה, עדכון או מחיקה של רשומה ב-`/lostItems` נשלחים אוטומטית ל-Google Apps Script דרך Cloud Function.
 - בנוסף לרשומות בזמן אמת, רצה כל 6 שעות סנכרון מלא של כל דף האבידות כדי לשחזר נתונים חסרים או כשלי רשת נקודתיים.
 - המטען שנשלח כולל את כל פרטי האבידה, כולל מזהה מסמך, מספר אבידה, קישור לתמונה, סטטוס, פרטי החזרה, וכתובת החתימה הדיגיטלית.
-- כתובת היעד מוגדרת ב-`functions/index.js` תחת `GOOGLE_SHEETS_SCRIPT_URL`, וניתן לעקוף אותה דרך משתנה הסביבה `GOOGLE_SHEETS_SCRIPT_URL`.
+- כתובת היעד נקראת ממשתנה הסביבה `GOOGLE_SHEETS_SCRIPT_URL`, ויש להגדיר אותו לערך של כתובת ה-Web App שסיפקתם ב-Google Apps Script לפני פריסה.
 
 #### מבנה המטען שנשלח ל-Google Apps Script
 - `action: "upsert"` — יצירה/עדכון של אבידה בודדת.

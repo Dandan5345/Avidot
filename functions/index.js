@@ -11,8 +11,6 @@ const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
 const ACTIVITY_LOGS_COLLECTION = "activityLogs";
 const ACTIVITY_LOG_RETENTION_DAYS = 31;
 const LOST_ITEMS_COLLECTION = "lostItems";
-const GOOGLE_SHEETS_SCRIPT_URL = process.env.GOOGLE_SHEETS_SCRIPT_URL ||
-    "https://script.google.com/macros/s/AKfycbzY2kLjZYsJCgWXChCZz9KA8IcLTan8k3i-y-k0DUjCzUwrFt8qLTRgQFqBwSHxc_p4/exec";
 const LOST_ITEMS_FULL_SYNC_BATCH_SIZE = 100;
 
 function isSuperAdminEmail(email) {
@@ -27,6 +25,20 @@ function normalizeOptionalString(value) {
     if (typeof value === "string") return value.trim();
     if (value === null || value === undefined) return "";
     return String(value);
+}
+
+function requiredGoogleSheetsScriptUrl() {
+    const url = normalizedString(process.env.GOOGLE_SHEETS_SCRIPT_URL);
+    if (!url) {
+        throw new Error("Missing GOOGLE_SHEETS_SCRIPT_URL environment variable");
+    }
+    return url;
+}
+
+function truncateForError(value, maxLength = 300) {
+    const text = normalizeOptionalString(value);
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength)}...truncated`;
 }
 
 function storageDisplayValue(item) {
@@ -81,7 +93,7 @@ function buildLostItemSyncRecord(itemId, itemData = {}, { deleted = false, synce
 }
 
 async function postLostItemsSync(payload) {
-    const response = await fetch(GOOGLE_SHEETS_SCRIPT_URL, {
+    const response = await fetch(requiredGoogleSheetsScriptUrl(), {
         method: "POST",
         headers: {
             "Content-Type": "application/json; charset=utf-8"
@@ -90,7 +102,7 @@ async function postLostItemsSync(payload) {
     });
     const responseText = await response.text();
     if (!response.ok) {
-        throw new Error(`Google Sheets sync failed (${response.status}): ${responseText.slice(0, 300)}`);
+        throw new Error(`Google Sheets sync failed (${response.status}): ${truncateForError(responseText)}`);
     }
     return responseText;
 }
@@ -135,6 +147,8 @@ async function syncAllLostItemsSnapshot() {
         return 0;
     }
 
+    // Keep chunk delivery sequential so Apps Script receives predictable order
+    // and does not hit burst limits during a full backfill.
     for (let index = 0; index < chunks.length; index += 1) {
         await postLostItemsSync({
             source: "firebase-functions",
@@ -261,6 +275,8 @@ exports.pruneActivityLogsMonthly = onSchedule({
     console.log(`[activity-log] monthly prune completed. deleted=${deletedCount}`);
 });
 
+// Retries are enabled because the Apps Script webhook may fail transiently.
+// The payloads are idempotent, so duplicate deliveries should be handled safely downstream.
 exports.syncLostItemsToGoogleSheets = onDocumentWritten({
     document: `${LOST_ITEMS_COLLECTION}/{itemId}`,
     region: "europe-west1",
@@ -269,10 +285,6 @@ exports.syncLostItemsToGoogleSheets = onDocumentWritten({
     const itemId = event.params.itemId;
     const afterData = event.data.after.exists ? event.data.after.data() : null;
     const beforeData = event.data.before.exists ? event.data.before.data() : null;
-
-    if (afterData && beforeData && JSON.stringify(afterData) === JSON.stringify(beforeData)) {
-        return;
-    }
 
     await syncSingleLostItemChange({
         itemId,
