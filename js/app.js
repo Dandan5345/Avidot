@@ -20,6 +20,7 @@ const logoutBtn = document.getElementById("logoutBtn");
 const homeBtn = document.getElementById("homeBtn");
 const brandLink = document.getElementById("brandLink");
 const appFooter = document.getElementById("appFooter");
+const DOUBLE_TAP_THRESHOLD_MS = 300;
 
 let currentTeardown = null;
 let isSignedIn = false;
@@ -61,7 +62,7 @@ function lockViewportZoom() {
   }, { passive: false });
   document.addEventListener("touchend", (event) => {
     const now = Date.now();
-    if (now - lastTouchEndAt < 300) {
+    if (now - lastTouchEndAt < DOUBLE_TAP_THRESHOLD_MS) {
       event.preventDefault();
     }
     lastTouchEndAt = now;

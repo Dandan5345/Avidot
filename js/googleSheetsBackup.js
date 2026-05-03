@@ -107,6 +107,9 @@ function buildLostItemRawSnapshot(item = {}, { deleted = false, syncedAt } = {})
     returnReturnedAt: returnDetails.returnedAt,
     returnReturnedBy: returnDetails.returnedBy,
     returnSignatureUrl: returnDetails.signatureUrl,
+    // Keep the nested returnDetails object alongside the flattened aliases so
+    // Apps Script consumers can use either the original Firestore-like shape
+    // or the column-friendly fields declared in LOST_ITEM_SYNC_FIELDS.
     returnDetails,
     createdAt: normalizeOptionalString(item.createdAt),
     createdBy: normalizeOptionalString(item.createdBy),
@@ -179,6 +182,9 @@ function buildLostItemChangePayload(item, { deleted = false } = {}) {
     collection: LOST_ITEMS_COLLECTION,
     syncedAt,
     fieldOrder: LOST_ITEM_SYNC_FIELDS,
+    // Send the same record under legacy and flat keys so older Apps Script
+    // handlers can continue reading the payload while newer ones can consume
+    // the normalized record/root fields without additional mapping.
     record,
     item: record,
     rawItem: buildLostItemRawSnapshot(item, { deleted, syncedAt }),
