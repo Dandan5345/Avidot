@@ -283,8 +283,7 @@ exports.syncLostItemsToGoogleSheets = onDocumentWritten({
 exports.syncLostItemsFullBackup = onSchedule({
     schedule: "0 */6 * * *",
     timeZone: "Asia/Jerusalem",
-    region: "europe-west1",
-    retryCount: 3
+    region: "europe-west1"
 }, async () => {
     const count = await syncAllLostItemsSnapshot();
     console.log(`[lost-items-sync] full backup completed. synced=${count}`);
