@@ -14,6 +14,13 @@ const VISIBLE_LOG_ACTION_PREFIXES = [
     "item.transfer.",
     "manager.fetch."
 ];
+const LOG_SUMMARY_PREFIX_TO_KEY = {
+    "item.create.": "created",
+    "item.delete.": "deleted",
+    "item.return.": "returned",
+    "item.transfer.": "transferred",
+    "manager.fetch.": "withdrawals"
+};
 
 export function renderActivityLogsPage(container) {
     if (!isAdmin()) {
@@ -133,12 +140,8 @@ function renderActorOptions(logs, selectedActor) {
 
 function renderSummary(logs) {
     const counts = logs.reduce((acc, log) => {
-        const action = String(log.action || "");
-        if (action.includes("item.create.")) acc.created += 1;
-        if (action.includes("item.delete.")) acc.deleted += 1;
-        if (action.includes("item.return.")) acc.returned += 1;
-        if (action.includes("item.transfer.")) acc.transferred += 1;
-        if (action.includes("manager.fetch.")) acc.withdrawals += 1;
+        const counterKey = actionSummaryKey(log.action);
+        if (counterKey) acc[counterKey] += 1;
         return acc;
     }, {
         created: 0,
@@ -283,4 +286,10 @@ function actionLabel(action) {
 function isOperationalLog(log) {
     const action = String(log?.action || "");
     return VISIBLE_LOG_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
+}
+
+function actionSummaryKey(action) {
+    const normalizedAction = String(action || "");
+    const matchingPrefix = VISIBLE_LOG_ACTION_PREFIXES.find((prefix) => normalizedAction.startsWith(prefix));
+    return matchingPrefix ? LOG_SUMMARY_PREFIX_TO_KEY[matchingPrefix] : "";
 }
