@@ -3,7 +3,7 @@ import { collectionLabel, subscribeActivityLogs } from "./activityLog.js";
 import { escapeHtml, formatDateTime } from "./utils.js";
 
 let unsubscribe = null;
-let allLogs = [];
+let visibleLogs = [];
 let hasLoadedSnapshot = false;
 let loadError = "";
 let viewState = { search: "", actor: "", date: "" };
@@ -75,7 +75,7 @@ export function renderActivityLogsPage(container) {
     });
 
     unsubscribe = subscribeActivityLogs((logs) => {
-        allLogs = logs.filter(shouldDisplayLog);
+        visibleLogs = logs.filter(isOperationalLog);
         hasLoadedSnapshot = true;
         loadError = "";
         render(container);
@@ -105,9 +105,9 @@ function render(container) {
         return;
     }
 
-    actorFilter.innerHTML = renderActorOptions(allLogs, viewState.actor);
+    actorFilter.innerHTML = renderActorOptions(visibleLogs, viewState.actor);
 
-    const filtered = allLogs.filter((log) => matchesFilters(log));
+    const filtered = visibleLogs.filter((log) => matchesFilters(log));
     countLabel.textContent = `${filtered.length} רשומות`;
     summaryEl.innerHTML = renderSummary(filtered);
 
@@ -132,11 +132,21 @@ function renderActorOptions(logs, selectedActor) {
 }
 
 function renderSummary(logs) {
-    const createdCount = logs.filter((log) => String(log.action || "").includes("item.create.")).length;
-    const deletedCount = logs.filter((log) => String(log.action || "").includes("item.delete.")).length;
-    const returnedCount = logs.filter((log) => String(log.action || "").includes("item.return.")).length;
-    const moveChanges = logs.filter((log) => String(log.action || "").includes("item.transfer.")).length;
-    const withdrawalsCount = logs.filter((log) => String(log.action || "").includes("manager.fetch.")).length;
+    const counts = logs.reduce((acc, log) => {
+        const action = String(log.action || "");
+        if (action.includes("item.create.")) acc.created += 1;
+        if (action.includes("item.delete.")) acc.deleted += 1;
+        if (action.includes("item.return.")) acc.returned += 1;
+        if (action.includes("item.transfer.")) acc.transferred += 1;
+        if (action.includes("manager.fetch.")) acc.withdrawals += 1;
+        return acc;
+    }, {
+        created: 0,
+        deleted: 0,
+        returned: 0,
+        transferred: 0,
+        withdrawals: 0
+    });
     const latest = logs[0]?.createdAt ? formatDateTime(logs[0].createdAt) : "-";
 
     return `
@@ -145,23 +155,23 @@ function renderSummary(logs) {
       <span>סה"כ פעולות מוצגות</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${createdCount}</strong>
+      <strong>${counts.created}</strong>
       <span>הוספות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${deletedCount}</strong>
+      <strong>${counts.deleted}</strong>
       <span>מחיקות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${returnedCount}</strong>
+      <strong>${counts.returned}</strong>
       <span>החזרות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${withdrawalsCount}</strong>
+      <strong>${counts.withdrawals}</strong>
       <span>משיכות</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${moveChanges}</strong>
+      <strong>${counts.transferred}</strong>
       <span>העברות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
@@ -270,7 +280,7 @@ function actionLabel(action) {
     return action;
 }
 
-function shouldDisplayLog(log) {
+function isOperationalLog(log) {
     const action = String(log?.action || "");
     return VISIBLE_LOG_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
 }
