@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 
 admin.initializeApp();
 
@@ -9,6 +10,9 @@ const SUPER_ADMIN_EMAIL = "Doronenakache@gmail.com";
 const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
 const ACTIVITY_LOGS_COLLECTION = "activityLogs";
 const ACTIVITY_LOG_RETENTION_DAYS = 31;
+const LOST_ITEMS_COLLECTION = "lostItems";
+const GOOGLE_SHEETS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzY2kLjZYsJCgWXChCZz9KA8IcLTan8k3i-y-k0DUjCzUwrFt8qLTRgQFqBwSHxc_p4/exec";
+const LOST_ITEMS_FULL_SYNC_BATCH_SIZE = 100;
 
 function isSuperAdminEmail(email) {
     return !!email && email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
@@ -16,6 +20,134 @@ function isSuperAdminEmail(email) {
 
 function normalizedString(value) {
     return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOptionalString(value) {
+    if (typeof value === "string") return value.trim();
+    if (value === null || value === undefined) return "";
+    return String(value);
+}
+
+function storageDisplayValue(item) {
+    if (normalizedString(item.storageLocation) !== "אחר") {
+        return normalizeOptionalString(item.storageLocation);
+    }
+    return normalizeOptionalString(item.storageOther) || "אחר";
+}
+
+function buildLostItemSyncRecord(itemId, itemData = {}, { deleted = false, syncedAt } = {}) {
+    const returnDetails = itemData.returnDetails || {};
+    const isReturned = !!itemData.returned;
+    const status = deleted ? "deleted" : (isReturned ? "returned" : "active");
+    const statusLabel = deleted ? "נמחקה" : (isReturned ? "הוחזרה לבעל האבידה" : "פעילה");
+
+    return {
+        id: itemId,
+        collection: LOST_ITEMS_COLLECTION,
+        number: itemData.number ?? "",
+        dateTime: normalizeOptionalString(itemData.dateTime),
+        description: normalizeOptionalString(itemData.description),
+        valuable: !!itemData.valuable,
+        foundLocation: normalizeOptionalString(itemData.foundLocation),
+        storageLocation: normalizeOptionalString(itemData.storageLocation),
+        storageOther: normalizeOptionalString(itemData.storageOther),
+        storageDisplay: storageDisplayValue(itemData),
+        finderName: normalizeOptionalString(itemData.finderName),
+        finderDept: normalizeOptionalString(itemData.finderDept),
+        finderUnknown: !!itemData.finderUnknown,
+        kabatHandler: normalizeOptionalString(itemData.kabatHandler),
+        currentLocation: normalizeOptionalString(itemData.currentLocation),
+        additionalDetails: normalizeOptionalString(itemData.additionalDetails),
+        ownerName: normalizeOptionalString(itemData.ownerName),
+        ownerPhone: normalizeOptionalString(itemData.ownerPhone),
+        ownerId: normalizeOptionalString(itemData.ownerId),
+        photoUrl: normalizeOptionalString(itemData.photoUrl),
+        returned: isReturned,
+        status,
+        statusLabel,
+        returnReceiverName: normalizeOptionalString(returnDetails.receiverName),
+        returnReceiverContact: normalizeOptionalString(returnDetails.receiverContact),
+        returnHandlerName: normalizeOptionalString(returnDetails.handlerName),
+        returnReturnedAt: normalizeOptionalString(returnDetails.returnedAt),
+        returnReturnedBy: normalizeOptionalString(returnDetails.returnedBy),
+        returnSignatureUrl: normalizeOptionalString(returnDetails.signatureUrl),
+        createdAt: normalizeOptionalString(itemData.createdAt),
+        createdBy: normalizeOptionalString(itemData.createdBy),
+        createdByName: normalizeOptionalString(itemData.createdByName),
+        deletedAt: deleted ? syncedAt : "",
+        syncedAt
+    };
+}
+
+async function postLostItemsSync(payload) {
+    const response = await fetch(GOOGLE_SHEETS_SCRIPT_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json; charset=utf-8"
+        },
+        body: JSON.stringify(payload)
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+        throw new Error(`Google Sheets sync failed (${response.status}): ${responseText.slice(0, 300)}`);
+    }
+    return responseText;
+}
+
+function chunkItems(items, size) {
+    const chunks = [];
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
+}
+
+async function syncSingleLostItemChange({ itemId, itemData, deleted = false }) {
+    const syncedAt = new Date().toISOString();
+    return postLostItemsSync({
+        source: "firebase-functions",
+        projectId: process.env.GCLOUD_PROJECT || "",
+        action: deleted ? "delete" : "upsert",
+        item: buildLostItemSyncRecord(itemId, itemData, { deleted, syncedAt })
+    });
+}
+
+async function syncAllLostItemsSnapshot() {
+    const syncedAt = new Date().toISOString();
+    const snapshot = await db.collection(LOST_ITEMS_COLLECTION).get();
+    const items = snapshot.docs.map((docSnap) =>
+        buildLostItemSyncRecord(docSnap.id, docSnap.data(), { syncedAt })
+    );
+    const chunks = chunkItems(items, LOST_ITEMS_FULL_SYNC_BATCH_SIZE);
+
+    if (!chunks.length) {
+        await postLostItemsSync({
+            source: "firebase-functions",
+            projectId: process.env.GCLOUD_PROJECT || "",
+            action: "full_sync",
+            collection: LOST_ITEMS_COLLECTION,
+            syncedAt,
+            items: [],
+            chunkIndex: 1,
+            chunkCount: 1
+        });
+        return 0;
+    }
+
+    for (let index = 0; index < chunks.length; index += 1) {
+        await postLostItemsSync({
+            source: "firebase-functions",
+            projectId: process.env.GCLOUD_PROJECT || "",
+            action: "full_sync",
+            collection: LOST_ITEMS_COLLECTION,
+            syncedAt,
+            items: chunks[index],
+            chunkIndex: index + 1,
+            chunkCount: chunks.length
+        });
+    }
+
+    return items.length;
 }
 
 function assertStrongPassword(password) {
@@ -126,6 +258,36 @@ exports.pruneActivityLogsMonthly = onSchedule({
 }, async () => {
     const deletedCount = await deleteExpiredActivityLogs();
     console.log(`[activity-log] monthly prune completed. deleted=${deletedCount}`);
+});
+
+exports.syncLostItemsToGoogleSheets = onDocumentWritten({
+    document: `${LOST_ITEMS_COLLECTION}/{itemId}`,
+    region: "europe-west1",
+    retry: true
+}, async (event) => {
+    const itemId = event.params.itemId;
+    const afterData = event.data.after.exists ? event.data.after.data() : null;
+    const beforeData = event.data.before.exists ? event.data.before.data() : null;
+
+    if (afterData && beforeData && JSON.stringify(afterData) === JSON.stringify(beforeData)) {
+        return;
+    }
+
+    await syncSingleLostItemChange({
+        itemId,
+        itemData: afterData || beforeData || {},
+        deleted: !afterData
+    });
+});
+
+exports.syncLostItemsFullBackup = onSchedule({
+    schedule: "0 */6 * * *",
+    timeZone: "Asia/Jerusalem",
+    region: "europe-west1",
+    retryCount: 3
+}, async () => {
+    const count = await syncAllLostItemsSnapshot();
+    console.log(`[lost-items-sync] full backup completed. synced=${count}`);
 });
 
 exports.setUserPassword = onCall(async (request) => {
