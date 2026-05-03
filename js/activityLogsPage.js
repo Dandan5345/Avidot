@@ -141,7 +141,7 @@ function renderActorOptions(logs, selectedActor) {
 function renderSummary(logs) {
     const counts = logs.reduce((acc, log) => {
         const counterKey = actionSummaryKey(log.action);
-        if (counterKey) acc[counterKey] += 1;
+        if (counterKey) acc[counterKey] = (acc[counterKey] || 0) + 1;
         return acc;
     }, {
         created: 0,

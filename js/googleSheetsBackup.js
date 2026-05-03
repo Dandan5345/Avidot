@@ -73,6 +73,8 @@ function buildLostItemSyncRecord(item = {}, { deleted = false, syncedAt } = {}) 
 }
 
 async function postLostItemsSync(payload) {
+  // Apps Script accepts the raw JSON string via postData.contents, while a
+  // text/plain request avoids the browser CORS preflight that blocked syncs.
   const response = await fetch(GOOGLE_SHEETS_WEB_APP_URL, {
     method: "POST",
     headers: {
