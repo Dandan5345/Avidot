@@ -11,7 +11,8 @@ const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
 const ACTIVITY_LOGS_COLLECTION = "activityLogs";
 const ACTIVITY_LOG_RETENTION_DAYS = 31;
 const LOST_ITEMS_COLLECTION = "lostItems";
-const GOOGLE_SHEETS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzY2kLjZYsJCgWXChCZz9KA8IcLTan8k3i-y-k0DUjCzUwrFt8qLTRgQFqBwSHxc_p4/exec";
+const GOOGLE_SHEETS_SCRIPT_URL = process.env.GOOGLE_SHEETS_SCRIPT_URL ||
+    "https://script.google.com/macros/s/AKfycbzY2kLjZYsJCgWXChCZz9KA8IcLTan8k3i-y-k0DUjCzUwrFt8qLTRgQFqBwSHxc_p4/exec";
 const LOST_ITEMS_FULL_SYNC_BATCH_SIZE = 100;
 
 function isSuperAdminEmail(email) {
@@ -96,8 +97,8 @@ async function postLostItemsSync(payload) {
 
 function chunkItems(items, size) {
     const chunks = [];
-    for (let index = 0; index < items.length; index += size) {
-        chunks.push(items.slice(index, index + size));
+    for (let chunkStart = 0; chunkStart < items.length; chunkStart += size) {
+        chunks.push(items.slice(chunkStart, chunkStart + size));
     }
     return chunks;
 }
