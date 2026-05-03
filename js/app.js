@@ -47,7 +47,7 @@ function lockViewportZoom() {
     viewportMeta.setAttribute("content", "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover");
   }
 
-  let lastTouchEndAt = 0;
+  let lastTouchEndTime = 0;
   document.addEventListener("gesturestart", (event) => {
     event.preventDefault();
   }, { passive: false });
@@ -62,10 +62,10 @@ function lockViewportZoom() {
   }, { passive: false });
   document.addEventListener("touchend", (event) => {
     const now = Date.now();
-    if (now - lastTouchEndAt < DOUBLE_TAP_THRESHOLD_MS) {
+    if (now - lastTouchEndTime < DOUBLE_TAP_THRESHOLD_MS) {
       event.preventDefault();
     }
-    lastTouchEndAt = now;
+    lastTouchEndTime = now;
   }, { passive: false });
 }
 
