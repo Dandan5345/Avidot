@@ -20,12 +20,14 @@ const logoutBtn = document.getElementById("logoutBtn");
 const homeBtn = document.getElementById("homeBtn");
 const brandLink = document.getElementById("brandLink");
 const appFooter = document.getElementById("appFooter");
+const DOUBLE_TAP_THRESHOLD_MS = 300;
 
 let currentTeardown = null;
 let isSignedIn = false;
 let lastRouteLog = { route: "", at: 0 };
 
 registerServiceWorker();
+lockViewportZoom();
 
 appEl.innerHTML = `<div class="section-card"><p>טוען...</p></div>`;
 
@@ -37,6 +39,34 @@ function registerServiceWorker() {
       .register(new URL("../sw.js", import.meta.url), { scope: "./" })
       .catch((error) => console.warn("[pwa] service worker registration failed:", error));
   }, { once: true });
+}
+
+function lockViewportZoom() {
+  const viewportMeta = document.querySelector('meta[name="viewport"]');
+  if (viewportMeta) {
+    viewportMeta.setAttribute("content", "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover");
+  }
+
+  let lastTouchEndTime = 0;
+  document.addEventListener("gesturestart", (event) => {
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("gesturechange", (event) => {
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("gestureend", (event) => {
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchmove", (event) => {
+    if (event.touches.length > 1) event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchend", (event) => {
+    const now = Date.now();
+    if (now - lastTouchEndTime < DOUBLE_TAP_THRESHOLD_MS) {
+      event.preventDefault();
+    }
+    lastTouchEndTime = now;
+  }, { passive: false });
 }
 
 function currentRoute() {
