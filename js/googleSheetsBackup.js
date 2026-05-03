@@ -181,6 +181,7 @@ function buildLostItemChangePayload(item, { deleted = false } = {}) {
     action: deleted ? "delete" : "upsert",
     collection: LOST_ITEMS_COLLECTION,
     syncedAt,
+    // Canonical Google Sheets column order for consumers that rebuild headers.
     fieldOrder: LOST_ITEM_SYNC_FIELDS,
     // Send the same record under legacy and flat keys so older Apps Script
     // handlers can continue reading the payload while newer ones can consume
@@ -202,6 +203,7 @@ function buildLostItemFullSyncPayload(items, { syncedAt, chunkIndex, chunkCount 
     action: "full_sync",
     collection: LOST_ITEMS_COLLECTION,
     syncedAt,
+    // Canonical Google Sheets column order for consumers that rebuild headers.
     fieldOrder: LOST_ITEM_SYNC_FIELDS,
     items: records,
     records,
