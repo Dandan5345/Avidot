@@ -1,6 +1,6 @@
 import { toast } from "./utils.js";
 
-const GOOGLE_SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzY2kLjZYsJCgWXChCZz9KA8IcLTan8k3i-y-k0DUjCzUwrFt8qLTRgQFqBwSHxc_p4/exec";
+const GOOGLE_SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxYrRia47OLY-stucfDpplfV1-w-OnKui6e5kPTLPkKrB-XH8A7yMWCM5RdXkBbV6py/exec";
 const LOST_ITEMS_COLLECTION = "lostItems";
 const FULL_SYNC_BATCH_SIZE = 100;
 const DELETE_SYNC_BATCH_SIZE = 10;
