@@ -26,6 +26,7 @@ let isSignedIn = false;
 let lastRouteLog = { route: "", at: 0 };
 
 registerServiceWorker();
+lockViewportZoom();
 
 appEl.innerHTML = `<div class="section-card"><p>טוען...</p></div>`;
 
@@ -37,6 +38,34 @@ function registerServiceWorker() {
       .register(new URL("../sw.js", import.meta.url), { scope: "./" })
       .catch((error) => console.warn("[pwa] service worker registration failed:", error));
   }, { once: true });
+}
+
+function lockViewportZoom() {
+  const viewportMeta = document.querySelector('meta[name="viewport"]');
+  if (viewportMeta) {
+    viewportMeta.setAttribute("content", "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover");
+  }
+
+  let lastTouchEndAt = 0;
+  document.addEventListener("gesturestart", (event) => {
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("gesturechange", (event) => {
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("gestureend", (event) => {
+    event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchmove", (event) => {
+    if (event.scale && event.scale !== 1) event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchend", (event) => {
+    const now = Date.now();
+    if (now - lastTouchEndAt < 300) {
+      event.preventDefault();
+    }
+    lastTouchEndAt = now;
+  }, { passive: false });
 }
 
 function currentRoute() {

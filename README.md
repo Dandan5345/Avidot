@@ -106,6 +106,7 @@ firebase deploy --only hosting,database
 - כל יצירה, עדכון או מחיקה של רשומה ב-`/lostItems` נשלחים ישירות מהקליינט ל-Google Apps Script, בלי Cloud Functions.
 - בטעינה הראשונה של דף האבידות הרגילות מתבצע גם סנכרון מלא של כל הרשומות ב-`lostItems`, כדי ליישר נתונים קיימים מול השייטס.
 - המטען שנשלח כולל את כל פרטי האבידה, כולל מזהה המסמך, מספר האבידה, קישור לתמונה, סטטוס, פרטי החזרה, וכתובת החתימה הדיגיטלית.
+- בכל עדכון נשלחים גם alias-ים תואמי-לאחור (`record`, `item`, שדות ברמת ה-root, `rawItem/rawItems` ו-`fieldOrder`) כדי ש-Google Apps Script יוכל לעדכן את כל העמודות הקיימות גם אם מבנה הקריאה הקודם נשמר.
 - כתובת היעד מוגדרת ב-`js/googleSheetsBackup.js` תחת `GOOGLE_SHEETS_WEB_APP_URL`.
 
 #### מבנה המטען שנשלח ל-Google Apps Script

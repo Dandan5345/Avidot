@@ -6,6 +6,42 @@ const FULL_SYNC_BATCH_SIZE = 100;
 const DELETE_SYNC_BATCH_SIZE = 10;
 const FULL_SYNC_COOLDOWN_MS = 10 * 60 * 1000;
 const LAST_FULL_SYNC_KEY = "lostItemsGoogleSheets:lastFullSyncAt";
+const LOST_ITEM_SYNC_FIELDS = [
+  "id",
+  "collection",
+  "number",
+  "dateTime",
+  "description",
+  "valuable",
+  "foundLocation",
+  "storageLocation",
+  "storageOther",
+  "storageDisplay",
+  "finderName",
+  "finderDept",
+  "finderUnknown",
+  "kabatHandler",
+  "currentLocation",
+  "additionalDetails",
+  "ownerName",
+  "ownerPhone",
+  "ownerId",
+  "photoUrl",
+  "returned",
+  "status",
+  "statusLabel",
+  "returnReceiverName",
+  "returnReceiverContact",
+  "returnHandlerName",
+  "returnReturnedAt",
+  "returnReturnedBy",
+  "returnSignatureUrl",
+  "createdAt",
+  "createdBy",
+  "createdByName",
+  "deletedAt",
+  "syncedAt"
+];
 
 function normalizeOptionalString(value) {
   if (typeof value === "string") return value.trim();
@@ -20,6 +56,52 @@ function storageDisplayValue(item) {
   return normalizeOptionalString(item.storageOther) || "אחר";
 }
 
+function normalizeOptionalBoolean(value) {
+  return !!value;
+}
+
+function normalizeReturnDetails(returnDetails = {}) {
+  return {
+    receiverName: normalizeOptionalString(returnDetails.receiverName),
+    receiverContact: normalizeOptionalString(returnDetails.receiverContact),
+    handlerName: normalizeOptionalString(returnDetails.handlerName),
+    returnedAt: normalizeOptionalString(returnDetails.returnedAt),
+    returnedBy: normalizeOptionalString(returnDetails.returnedBy),
+    signatureUrl: normalizeOptionalString(returnDetails.signatureUrl)
+  };
+}
+
+function buildLostItemRawSnapshot(item = {}, { deleted = false, syncedAt } = {}) {
+  return {
+    id: normalizeOptionalString(item.id),
+    collection: LOST_ITEMS_COLLECTION,
+    number: item.number ?? "",
+    dateTime: normalizeOptionalString(item.dateTime),
+    description: normalizeOptionalString(item.description),
+    valuable: normalizeOptionalBoolean(item.valuable),
+    foundLocation: normalizeOptionalString(item.foundLocation),
+    storageLocation: normalizeOptionalString(item.storageLocation),
+    storageOther: normalizeOptionalString(item.storageOther),
+    finderName: normalizeOptionalString(item.finderName),
+    finderDept: normalizeOptionalString(item.finderDept),
+    finderUnknown: normalizeOptionalBoolean(item.finderUnknown),
+    kabatHandler: normalizeOptionalString(item.kabatHandler),
+    currentLocation: normalizeOptionalString(item.currentLocation),
+    additionalDetails: normalizeOptionalString(item.additionalDetails),
+    ownerName: normalizeOptionalString(item.ownerName),
+    ownerPhone: normalizeOptionalString(item.ownerPhone),
+    ownerId: normalizeOptionalString(item.ownerId),
+    photoUrl: normalizeOptionalString(item.photoUrl),
+    returned: normalizeOptionalBoolean(item.returned),
+    returnDetails: normalizeReturnDetails(item.returnDetails || {}),
+    createdAt: normalizeOptionalString(item.createdAt),
+    createdBy: normalizeOptionalString(item.createdBy),
+    createdByName: normalizeOptionalString(item.createdByName),
+    deletedAt: deleted ? syncedAt : "",
+    syncedAt
+  };
+}
+
 function chunkItems(items, size) {
   const chunks = [];
   for (let index = 0; index < items.length; index += size) {
@@ -29,7 +111,7 @@ function chunkItems(items, size) {
 }
 
 function buildLostItemSyncRecord(item = {}, { deleted = false, syncedAt } = {}) {
-  const returnDetails = item.returnDetails || {};
+  const returnDetails = normalizeReturnDetails(item.returnDetails || {});
   const returned = !!item.returned;
   const status = deleted ? "deleted" : (returned ? "returned" : "active");
   const statusLabel = deleted ? "נמחקה" : (returned ? "הוחזרה לבעל האבידה" : "פעילה");
@@ -72,6 +154,43 @@ function buildLostItemSyncRecord(item = {}, { deleted = false, syncedAt } = {}) 
   };
 }
 
+function buildLostItemChangePayload(item, { deleted = false } = {}) {
+  const syncedAt = new Date().toISOString();
+  const record = buildLostItemSyncRecord(item, { deleted, syncedAt });
+
+  return {
+    source: "firestore-client",
+    schemaVersion: 2,
+    action: deleted ? "delete" : "upsert",
+    collection: LOST_ITEMS_COLLECTION,
+    syncedAt,
+    fieldOrder: LOST_ITEM_SYNC_FIELDS,
+    record,
+    item: record,
+    rawItem: buildLostItemRawSnapshot(item, { deleted, syncedAt }),
+    ...record
+  };
+}
+
+function buildLostItemFullSyncPayload(items, { syncedAt, chunkIndex, chunkCount } = {}) {
+  const records = (items || []).map((item) => buildLostItemSyncRecord(item, { syncedAt }));
+  const rawItems = (items || []).map((item) => buildLostItemRawSnapshot(item, { syncedAt }));
+
+  return {
+    source: "firestore-client",
+    schemaVersion: 2,
+    action: "full_sync",
+    collection: LOST_ITEMS_COLLECTION,
+    syncedAt,
+    fieldOrder: LOST_ITEM_SYNC_FIELDS,
+    items: records,
+    records,
+    rawItems,
+    chunkIndex,
+    chunkCount
+  };
+}
+
 async function postLostItemsSync(payload) {
   // Apps Script accepts the raw JSON string via postData.contents, while a
   // text/plain request avoids the browser CORS preflight that blocked syncs.
@@ -90,44 +209,30 @@ async function postLostItemsSync(payload) {
 }
 
 async function syncLostItemChange(item, { deleted = false } = {}) {
-  const syncedAt = new Date().toISOString();
-  await postLostItemsSync({
-    source: "firestore-client",
-    action: deleted ? "delete" : "upsert",
-    item: buildLostItemSyncRecord(item, { deleted, syncedAt })
-  });
+  await postLostItemsSync(buildLostItemChangePayload(item, { deleted }));
 }
 
 async function syncLostItemsFullSnapshot(items) {
   const syncedAt = new Date().toISOString();
-  const records = (items || []).map((item) => buildLostItemSyncRecord(item, { syncedAt }));
-  const chunks = chunkItems(records, FULL_SYNC_BATCH_SIZE);
+  const chunks = chunkItems(items || [], FULL_SYNC_BATCH_SIZE);
 
   if (!chunks.length) {
-    await postLostItemsSync({
-      source: "firestore-client",
-      action: "full_sync",
-      collection: LOST_ITEMS_COLLECTION,
+    await postLostItemsSync(buildLostItemFullSyncPayload([], {
       syncedAt,
-      items: [],
       chunkIndex: 1,
       chunkCount: 1
-    });
+    }));
     return;
   }
 
   // Keep full-sync chunks sequential so the Apps Script endpoint receives
   // a predictable order and avoids burst traffic when an entire sheet is rebuilt.
   for (let index = 0; index < chunks.length; index += 1) {
-    await postLostItemsSync({
-      source: "firestore-client",
-      action: "full_sync",
-      collection: LOST_ITEMS_COLLECTION,
+    await postLostItemsSync(buildLostItemFullSyncPayload(chunks[index], {
       syncedAt,
-      items: chunks[index],
       chunkIndex: index + 1,
       chunkCount: chunks.length
-    });
+    }));
   }
 }
 
