@@ -102,6 +102,25 @@ firebase deploy --only hosting,database
 - בחירת טווח תאריכים, האם לכלול יקרות ערך, ובחירת פעולה: **תרומה** (רשימה ניתנת להדפסה עם 3 אופציות מיון) או **מחיקה** (אישור כפול).
 - פועל אך ורק על אבידות רגילות שלא הוחזרו.
 
+### 7. גיבוי אוטומטי ל-Google Sheets
+- כל יצירה, עדכון או מחיקה של רשומה ב-`/lostItems` נשלחים ישירות מהקליינט ל-Google Apps Script, בלי Cloud Functions.
+- בטעינה הראשונה של דף האבידות הרגילות מתבצע גם סנכרון מלא של כל הרשומות ב-`lostItems`, כדי ליישר נתונים קיימים מול השייטס.
+- המטען שנשלח כולל את כל פרטי האבידה, כולל מזהה המסמך, מספר האבידה, קישור לתמונה, סטטוס, פרטי החזרה, וכתובת החתימה הדיגיטלית.
+- כתובת היעד מוגדרת ב-`js/googleSheetsBackup.js` תחת `GOOGLE_SHEETS_WEB_APP_URL`.
+
+#### מבנה המטען שנשלח ל-Google Apps Script
+- `action: "upsert"` — יצירה/עדכון של אבידה בודדת.
+- `action: "delete"` — מחיקה של אבידה; הרשומה נשלחת עם `status: "deleted"` ו-`deletedAt`.
+- `action: "full_sync"` — סנכרון מלא של כל אבידות `lostItems`, מחולק ל-chunks של עד 100 רשומות בכל בקשה.
+- בכל payload יש רשומה/רשומות עם שדות כגון:
+  - `id`, `number`, `dateTime`, `description`, `valuable`, `foundLocation`
+  - `storageLocation`, `storageOther`, `storageDisplay`
+  - `finderName`, `finderDept`, `finderUnknown`, `kabatHandler`
+  - `ownerName`, `ownerPhone`, `ownerId`, `photoUrl`
+  - `returned`, `status`, `statusLabel`
+  - `returnReceiverName`, `returnReceiverContact`, `returnHandlerName`, `returnReturnedAt`, `returnReturnedBy`, `returnSignatureUrl`
+  - `createdAt`, `createdBy`, `createdByName`, `deletedAt`, `syncedAt`
+
 ## מבנה הנתונים
 
 ```

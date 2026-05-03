@@ -3,14 +3,39 @@
 
 import {
   createDocument,
+  deleteDocumentsBatch,
   deleteDocument,
   fetchCollection,
   findDocumentsByField,
+  getDocument,
   nextCounterValue,
   setCounterValue,
   updateDocument
 } from "./firestoreStore.js";
 import { openModal, escapeHtml, formatDateTime, detailRows } from "./utils.js";
+import {
+  syncLostItemDeleteSafe,
+  syncLostItemUpsertSafe,
+  syncLostItemsDeleteBatchSafe
+} from "./googleSheetsBackup.js";
+
+function normalizeBatchEntryId(entry) {
+  return typeof entry === "string" ? entry : entry?.id;
+}
+
+function mergeItemPatch(item, patch) {
+  return item ? { ...item, ...patch, id: item.id } : null;
+}
+
+async function fetchDocumentsByIdsInChunks(collectionName, ids, chunkSize = 25) {
+  const results = [];
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const chunk = ids.slice(index, index + chunkSize);
+    const docs = await Promise.all(chunk.map((id) => getDocument(collectionName, id)));
+    results.push(...docs.filter((item) => item?.id));
+  }
+  return results;
+}
 
 /**
  * Get the next item number for a given collection. We don't strictly rely
@@ -34,15 +59,51 @@ export async function fetchAllItems(collectionName) {
 }
 
 export async function createItem(collectionName, data) {
-  return createDocument(collectionName, data);
+  const id = await createDocument(collectionName, data);
+  if (collectionName === "lostItems") {
+    await syncLostItemUpsertSafe({ id, ...data });
+  }
+  return id;
 }
 
-export async function updateItem(collectionName, id, patch) {
+export async function updateItem(collectionName, id, patch, { existingItem = null } = {}) {
   await updateDocument(collectionName, id, patch);
+  if (collectionName === "lostItems") {
+    const updated = existingItem
+      ? mergeItemPatch(existingItem, patch)
+      : await getDocument(collectionName, id);
+    if (updated) await syncLostItemUpsertSafe(updated);
+  }
 }
 
 export async function deleteItem(collectionName, id) {
+  const existing = collectionName === "lostItems" ? await getDocument(collectionName, id) : null;
   await deleteDocument(collectionName, id);
+  if (collectionName === "lostItems" && existing) {
+    await syncLostItemDeleteSafe(existing);
+  }
+}
+
+export async function deleteItemsBatch(collectionName, itemsOrIds) {
+  const normalizedEntries = (itemsOrIds || []).filter(Boolean);
+  const ids = normalizedEntries.map(normalizeBatchEntryId).filter(Boolean);
+  if (!ids.length) return;
+
+  let deletedItems = [];
+  if (collectionName === "lostItems") {
+    const objectEntries = normalizedEntries.filter((entry) => typeof entry === "object");
+    const missingIds = normalizedEntries
+      .filter((entry) => typeof entry === "string")
+      .map(normalizeBatchEntryId)
+      .filter(Boolean);
+    const missingItems = await fetchDocumentsByIdsInChunks(collectionName, missingIds);
+    deletedItems = objectEntries.concat(missingItems).filter((item) => item?.id);
+  }
+
+  await deleteDocumentsBatch(collectionName, ids);
+  if (collectionName === "lostItems" && deletedItems.length) {
+    await syncLostItemsDeleteBatchSafe(deletedItems);
+  }
 }
 
 export async function findItemsByNumber(collectionName, number) {

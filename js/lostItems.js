@@ -12,6 +12,7 @@ import {
 } from "./utils.js";
 import { attachImageUpload, imageUploadFieldHtml, uploadImageToImgBB } from "./imgbb.js";
 import { collectionLabel, logActivitySafe } from "./activityLog.js";
+import { syncLostItemsFullSnapshotSafe } from "./googleSheetsBackup.js";
 
 const COLLECTION = "lostItems";
 const STORAGE_OPTIONS = [
@@ -28,8 +29,10 @@ let hasLoadedSnapshot = false;
 let loadError = "";
 let initialLoadTimer = null;
 let viewState = { search: "", date: "", showReturned: false };
+let hasRequestedSheetsFullSync = false;
 
 export function renderLostItems(container) {
+  hasRequestedSheetsFullSync = false;
   container.innerHTML = `
     <div class="page-title">
       <h2>🎒 אבידות</h2>
@@ -111,6 +114,10 @@ export function renderLostItems(container) {
     allItems = items;
     hasLoadedSnapshot = true;
     loadError = "";
+    if (!hasRequestedSheetsFullSync) {
+      hasRequestedSheetsFullSync = true;
+      void syncLostItemsFullSnapshotSafe(items);
+    }
     render();
   }, (error) => {
     clearTimeout(initialLoadTimer);
@@ -573,7 +580,7 @@ function openReturnFormModal(item) {
                 returnedBy: currentUser.uid || null,
                 signatureUrl
               }
-            });
+            }, { existingItem: item });
             void logActivitySafe({
               action: "item.return.lost",
               entityType: "item",
