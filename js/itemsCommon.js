@@ -3,14 +3,21 @@
 
 import {
   createDocument,
+  deleteDocumentsBatch,
   deleteDocument,
   fetchCollection,
   findDocumentsByField,
+  getDocument,
   nextCounterValue,
   setCounterValue,
   updateDocument
 } from "./firestoreStore.js";
 import { openModal, escapeHtml, formatDateTime, detailRows } from "./utils.js";
+import {
+  syncLostItemDeleteSafe,
+  syncLostItemUpsertSafe,
+  syncLostItemsDeleteBatchSafe
+} from "./googleSheetsBackup.js";
 
 /**
  * Get the next item number for a given collection. We don't strictly rely
@@ -34,15 +41,46 @@ export async function fetchAllItems(collectionName) {
 }
 
 export async function createItem(collectionName, data) {
-  return createDocument(collectionName, data);
+  const id = await createDocument(collectionName, data);
+  if (collectionName === "lostItems") {
+    await syncLostItemUpsertSafe({ id, ...data });
+  }
+  return id;
 }
 
 export async function updateItem(collectionName, id, patch) {
   await updateDocument(collectionName, id, patch);
+  if (collectionName === "lostItems") {
+    const updated = await getDocument(collectionName, id);
+    if (updated) await syncLostItemUpsertSafe(updated);
+  }
 }
 
 export async function deleteItem(collectionName, id) {
+  const existing = collectionName === "lostItems" ? await getDocument(collectionName, id) : null;
   await deleteDocument(collectionName, id);
+  if (collectionName === "lostItems" && existing) {
+    await syncLostItemDeleteSafe(existing);
+  }
+}
+
+export async function deleteItemsBatch(collectionName, itemsOrIds) {
+  const ids = (itemsOrIds || []).map((entry) => typeof entry === "string" ? entry : entry?.id).filter(Boolean);
+  if (!ids.length) return;
+
+  let deletedItems = [];
+  if (collectionName === "lostItems") {
+    deletedItems = await Promise.all((itemsOrIds || []).map(async (entry) => {
+      if (entry && typeof entry === "object") return entry;
+      return getDocument(collectionName, entry);
+    }));
+    deletedItems = deletedItems.filter((item) => item?.id);
+  }
+
+  await deleteDocumentsBatch(collectionName, ids);
+  if (collectionName === "lostItems" && deletedItems.length) {
+    await syncLostItemsDeleteBatchSafe(deletedItems);
+  }
 }
 
 export async function findItemsByNumber(collectionName, number) {

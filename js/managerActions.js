@@ -1,11 +1,10 @@
 // Page 4: פעולות אחמ"ש — משיכת / מחיקת אבידות
 // Operates on lostItems for donation lists or permanent deletion.
-import { fetchAllItems } from "./itemsCommon.js";
+import { deleteItemsBatch, fetchAllItems } from "./itemsCommon.js";
 import { isAhmash } from "./auth.js";
 import { escapeHtml, formatDateTime, formatDate, toast, confirmDialog } from "./utils.js";
 import { currentUser } from "./auth.js";
 import { logActivitySafe } from "./activityLog.js";
-import { deleteDocumentsBatch } from "./firestoreStore.js";
 
 const COLLECTION = "lostItems";
 let lastFiltered = [];
@@ -267,7 +266,7 @@ function renderDeleteView(container, items, opts) {
 
     for (const chunk of chunks) {
       try {
-        await deleteDocumentsBatch(COLLECTION, chunk.map((item) => item.id));
+        await deleteItemsBatch(COLLECTION, chunk);
         deletedItems.push(...chunk);
       } catch (error) {
         failed += chunk.length;
