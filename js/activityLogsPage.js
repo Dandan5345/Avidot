@@ -3,10 +3,24 @@ import { collectionLabel, subscribeActivityLogs } from "./activityLog.js";
 import { escapeHtml, formatDateTime } from "./utils.js";
 
 let unsubscribe = null;
-let allLogs = [];
+let visibleLogs = [];
 let hasLoadedSnapshot = false;
 let loadError = "";
 let viewState = { search: "", actor: "", date: "" };
+const VISIBLE_LOG_ACTION_PREFIXES = [
+    "item.create.",
+    "item.delete.",
+    "item.return.",
+    "item.transfer.",
+    "manager.fetch."
+];
+const LOG_SUMMARY_PREFIX_TO_KEY = {
+    "item.create.": "created",
+    "item.delete.": "deleted",
+    "item.return.": "returned",
+    "item.transfer.": "transferred",
+    "manager.fetch.": "withdrawals"
+};
 
 export function renderActivityLogsPage(container) {
     if (!isAdmin()) {
@@ -68,7 +82,7 @@ export function renderActivityLogsPage(container) {
     });
 
     unsubscribe = subscribeActivityLogs((logs) => {
-        allLogs = logs;
+        visibleLogs = logs.filter(isOperationalLog);
         hasLoadedSnapshot = true;
         loadError = "";
         render(container);
@@ -98,9 +112,9 @@ function render(container) {
         return;
     }
 
-    actorFilter.innerHTML = renderActorOptions(allLogs, viewState.actor);
+    actorFilter.innerHTML = renderActorOptions(visibleLogs, viewState.actor);
 
-    const filtered = allLogs.filter((log) => matchesFilters(log));
+    const filtered = visibleLogs.filter((log) => matchesFilters(log));
     countLabel.textContent = `${filtered.length} רשומות`;
     summaryEl.innerHTML = renderSummary(filtered);
 
@@ -125,9 +139,17 @@ function renderActorOptions(logs, selectedActor) {
 }
 
 function renderSummary(logs) {
-    const itemChanges = logs.filter((log) => log.entityType === "item").length;
-    const userChanges = logs.filter((log) => log.entityType === "user").length;
-    const moveChanges = logs.filter((log) => String(log.action || "").includes("transfer")).length;
+    const counts = logs.reduce((acc, log) => {
+        const counterKey = actionSummaryKey(log.action);
+        if (counterKey) acc[counterKey] = (acc[counterKey] || 0) + 1;
+        return acc;
+    }, {
+        created: 0,
+        deleted: 0,
+        returned: 0,
+        transferred: 0,
+        withdrawals: 0
+    });
     const latest = logs[0]?.createdAt ? formatDateTime(logs[0].createdAt) : "-";
 
     return `
@@ -136,16 +158,24 @@ function renderSummary(logs) {
       <span>סה"כ פעולות מוצגות</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${itemChanges}</strong>
-      <span>פעולות על אבידות</span>
+      <strong>${counts.created}</strong>
+      <span>הוספות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${moveChanges}</strong>
-      <span>העברות בין דפים</span>
+      <strong>${counts.deleted}</strong>
+      <span>מחיקות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
-      <strong>${userChanges}</strong>
-      <span>פעולות על משתמשים</span>
+      <strong>${counts.returned}</strong>
+      <span>החזרות אבידה</span>
+    </div>
+    <div class="log-summary-card section-card">
+      <strong>${counts.withdrawals}</strong>
+      <span>משיכות</span>
+    </div>
+    <div class="log-summary-card section-card">
+      <strong>${counts.transferred}</strong>
+      <span>העברות אבידה</span>
     </div>
     <div class="log-summary-card section-card">
       <strong>${escapeHtml(latest)}</strong>
@@ -251,4 +281,15 @@ function actionLabel(action) {
     if (action.includes("print")) return "הדפסה";
     if (action.includes("sort")) return "מיון";
     return action;
+}
+
+function isOperationalLog(log) {
+    const action = String(log?.action || "");
+    return VISIBLE_LOG_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
+}
+
+function actionSummaryKey(action) {
+    const normalizedAction = String(action || "");
+    const matchingPrefix = VISIBLE_LOG_ACTION_PREFIXES.find((prefix) => normalizedAction.startsWith(prefix));
+    return matchingPrefix ? LOG_SUMMARY_PREFIX_TO_KEY[matchingPrefix] : "";
 }
