@@ -221,8 +221,22 @@ export function renderLogin(container) {
     btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
     try {
       await authPersistenceReady;
-      await signInWithEmailAndPassword(auth, email, password);
-      console.log("[login] sign-in succeeded");
+      let lastErr = null;
+      for (const domain of ["@aovdim.com", "@gmail.com"]) {
+        try {
+          await signInWithEmailAndPassword(auth, username.toLowerCase() + domain, password);
+          lastErr = null;
+          break;
+        } catch (e) {
+          const c = (e && e.code) || "";
+          if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found") || c.includes("invalid-login-credentials")) {
+            lastErr = e;
+          } else {
+            throw e;
+          }
+        }
+      }
+      if (lastErr) throw lastErr;
     } catch (err) {
       console.error("[login] sign-in failed:", err);
       let msg = "שגיאה בהתחברות";
