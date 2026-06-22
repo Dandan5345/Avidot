@@ -191,8 +191,8 @@ export function renderLogin(container) {
           <p class="sub">מחלקת ביטחון – מלון ממילא ירושלים</p>
           <div id="loginError" class="login-error" style="display:none"></div>
           <label class="field">
-            <span>אימייל</span>
-            <input type="email" id="loginEmail" required autocomplete="email" />
+            <span>שם משתמש</span>
+            <input type="text" id="loginUsername" required autocomplete="username" />
           </label>
           <label class="field">
             <span>סיסמה</span>
@@ -214,11 +214,11 @@ export function renderLogin(container) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     errEl.style.display = "none";
-    const email = container.querySelector("#loginEmail").value.trim();
+    const username = container.querySelector("#loginUsername").value.trim();
+    const email = username.toLowerCase() + "@aovdim.com";
     const password = container.querySelector("#loginPassword").value;
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
-    console.log("[login] attempting sign-in for", email);
     try {
       await authPersistenceReady;
       await signInWithEmailAndPassword(auth, email, password);
@@ -228,7 +228,7 @@ export function renderLogin(container) {
       let msg = "שגיאה בהתחברות";
       const code = (err && err.code) || "";
       if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found") || code.includes("invalid-login-credentials")) {
-        msg = "אימייל או סיסמה שגויים";
+        msg = "שם משתמש או סיסמה שגויים";
       } else if (code.includes("too-many-requests")) {
         msg = "יותר מדי ניסיונות התחברות. נסה שוב מאוחר יותר.";
       } else if (code.includes("network")) {

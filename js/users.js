@@ -22,6 +22,8 @@ import { logActivity } from "./activityLog.js";
 const COLLECTION = "users";
 const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
 const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 6 תווים, לפחות מספר אחד ולפחות אות אנגלית גדולה אחת';
+const USERNAME_DOMAIN = "@aovdim.com";
+const USERNAME_RULE = /^[a-zA-Z][a-zA-Z0-9._-]{4,}$/;
 const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
 const setUserPasswordCall = httpsCallable(functionsClient, "setUserPassword");
 
@@ -208,8 +210,8 @@ function openAddUserModal() {
       } catch (e) {
         console.error(e);
         let msg = e.message || "שגיאה ביצירת המשתמש";
-        if (e.code === "auth/email-already-in-use") msg = "האימייל כבר רשום במערכת";
-        else if (e.code === "auth/invalid-email") msg = "אימייל לא תקין";
+        if (e.code === "auth/email-already-in-use") msg = "שם המשתמש כבר תפוס במערכת";
+        else if (e.code === "auth/invalid-email") msg = "שם משתמש לא תקין";
         else if (e.code === "auth/weak-password") msg = "סיסמה חלשה מדי";
         toast(msg, "error");
         button.disabled = false;
@@ -299,10 +301,17 @@ function userFormHtml({ user = null, requirePassword }) {
           <input type="text" id="u_name" value="${escapeHtml(user?.name || "")}" required /></label>
         <label class="field"><span>מספר עובד</span>
           <input type="text" id="u_emp" value="${escapeHtml(user?.employeeNumber || "")}" /></label>
-        <label class="field full"><span>אימייל</span>
-          <input type="email" id="u_email" value="${escapeHtml(user?.email || "")}" ${user ? "disabled" : "required"} />
-          ${user ? '<small class="field-note">שינוי אימייל דורש עדכון גם ב-Firebase Authentication ולכן חסום כאן.</small>' : ""}
+        ${!user ? `
+        <label class="field full"><span>שם משתמש</span>
+          <input type="text" id="u_username" required autocomplete="off" placeholder="לדוגמה: david123" />
+          <small class="field-note">אנגלית בלבד, לפחות 5 תווים, ללא רווחים. כתובת המייל תהיה שם_משתמש@aovdim.com</small>
         </label>
+        ` : `
+        <label class="field full"><span>אימייל</span>
+          <input type="email" id="u_email" value="${escapeHtml(user?.email || "")}" disabled />
+          <small class="field-note">שינוי אימייל דורש עדכון גם ב-Firebase Authentication ולכן חסום כאן.</small>
+        </label>
+        `}
         ${requirePassword ? `
           ${passwordFieldHtml({
     id: "u_pwd",
@@ -325,18 +334,24 @@ function userFormHtml({ user = null, requirePassword }) {
 function readUserForm(body, { requirePassword }) {
   const name = body.querySelector("#u_name").value.trim();
   const employeeNumber = body.querySelector("#u_emp").value.trim();
-  const emailField = body.querySelector("#u_email");
-  const email = emailField ? emailField.value.trim() : "";
   const role = body.querySelector("#u_role").value;
   const isAdmin = body.querySelector("#u_admin").checked;
   const password = requirePassword ? body.querySelector("#u_pwd").value : "";
 
   if (!name) throw new Error("יש למלא שם עובד");
   if (!role) throw new Error("יש לבחור תפקיד");
+
+  let email = "";
   if (requirePassword) {
-    if (!email) throw new Error("יש למלא אימייל");
+    const usernameField = body.querySelector("#u_username");
+    const username = usernameField ? usernameField.value.trim() : "";
+    validateUsername(username);
+    email = username.toLowerCase() + USERNAME_DOMAIN;
     if (!password) throw new Error("יש למלא סיסמה");
     assertStrongPassword(password);
+  } else {
+    const emailField = body.querySelector("#u_email");
+    email = emailField ? emailField.value.trim() : "";
   }
 
   return { name, employeeNumber, email, role, isAdmin, password };
@@ -368,6 +383,16 @@ function wirePasswordToggles(root) {
 function assertStrongPassword(password) {
   if (!PASSWORD_RULE.test(password)) {
     throw new Error(PASSWORD_RULE_TEXT);
+  }
+}
+
+function validateUsername(username) {
+  if (!username) throw new Error("יש למלא שם משתמש");
+  if (/\s/.test(username)) throw new Error("שם המשתמש לא יכול להכיל רווחים");
+  if (!USERNAME_RULE.test(username)) throw new Error("שם המשתמש חייב להתחיל באות אנגלית, להכיל לפחות 5 תווים ולהיות ללא רווחים");
+  const emailToCheck = username.toLowerCase() + USERNAME_DOMAIN;
+  if (allUsers.some((u) => u.email?.toLowerCase() === emailToCheck)) {
+    throw new Error("שם המשתמש כבר תפוס");
   }
 }
 
