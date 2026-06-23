@@ -20,8 +20,8 @@ import {
 import { logActivity } from "./activityLog.js";
 
 const COLLECTION = "users";
-const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
-const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 6 תווים, לפחות מספר אחד ולפחות אות אנגלית גדולה אחת';
+const PASSWORD_RULE = /^.{5,}$/;
+const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 5 תווים (מספרים בלבד זה בסדר, לדוגמה 22000)';
 const USERNAME_DOMAIN = "@aovdim.com";
 const USERNAME_RULE = /^[a-zA-Z][a-zA-Z0-9._-]{4,}$/;
 const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
@@ -361,7 +361,7 @@ function passwordFieldHtml({ id, label, value = "", required = false, note = "" 
   return `
     <label class="field full"><span>${label}</span>
       <div class="password-shell">
-        <input type="password" id="${id}" value="${escapeHtml(value)}" ${required ? "required" : ""} minlength="6" autocomplete="new-password" />
+        <input type="password" id="${id}" value="${escapeHtml(value)}" ${required ? "required" : ""} minlength="5" autocomplete="new-password" />
         <button type="button" class="password-toggle" data-toggle-password="${id}">הצג</button>
       </div>
       ${note ? `<small class="field-note">${escapeHtml(note)}</small>` : ""}

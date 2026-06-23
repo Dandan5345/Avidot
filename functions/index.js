@@ -6,7 +6,7 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const SUPER_ADMIN_EMAIL = "Doronenakache@gmail.com";
-const PASSWORD_RULE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
+const PASSWORD_RULE = /^.{5,}$/;
 const ACTIVITY_LOGS_COLLECTION = "activityLogs";
 const ACTIVITY_LOG_RETENTION_DAYS = 31;
 
@@ -22,7 +22,7 @@ function assertStrongPassword(password) {
     if (!PASSWORD_RULE.test(password)) {
         throw new HttpsError(
             "invalid-argument",
-            "הסיסמה חייבת להכיל לפחות 6 תווים, לפחות מספר אחד ולפחות אות אנגלית גדולה אחת"
+            "הסיסמה חייבת להכיל לפחות 5 תווים (מספרים בלבד זה בסדר, לדוגמה 22000)"
         );
     }
 }
