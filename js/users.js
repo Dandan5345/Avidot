@@ -20,15 +20,55 @@ import {
 import { logActivity } from "./activityLog.js";
 
 const COLLECTION = "users";
-const PASSWORD_RULE_TEXT = 'לפחות 6 תווים — אותיות או מספרים (לדוגמה: 220000)';
+const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 6 תווים ולכלול אותיות ומספרים. המלצה: האות m ומספר העובד (לדוגמה: m21000).';
 const USERNAME_DOMAIN = "@aovdim.com";
 // שם המשתמש חייב להכיל לפחות 5 תווים ולא יכול להכיל רווחים.
 // מותר: אנגלית, מספרים בלבד, ועברית.
 const USERNAME_MIN_LENGTH = 5;
 const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
+const setUserPasswordCall = httpsCallable(functionsClient, "setUserPassword");
+const setUsernameCall = httpsCallable(functionsClient, "setUsername");
 
 let unsubscribe = null;
 let allUsers = [];
+
+// Table sorting. Default: admins → ahmash → kabat, then by name.
+let sortKey = "role";
+let sortDir = 1; // 1 = ascending, -1 = descending
+
+// Rank for the default grouping: admin first, then ahmash, then kabat.
+function roleRank(u) {
+  if (u.isAdmin) return 0;
+  if (u.role === "ahmash") return 1;
+  return 2;
+}
+
+function usernameOf(u) {
+  return u.username || usernameFromEmail(u.email);
+}
+
+function compareUsers(a, b) {
+  let res = 0;
+  switch (sortKey) {
+    case "name": res = (a.name || "").localeCompare(b.name || "", "he"); break;
+    case "employeeNumber": res = (a.employeeNumber || "").localeCompare(b.employeeNumber || "", "he", { numeric: true }); break;
+    case "username": res = usernameOf(a).localeCompare(usernameOf(b), "he"); break;
+    case "created": res = String(a.createdAt || "").localeCompare(String(b.createdAt || "")); break;
+    case "admin": res = (a.isAdmin ? 0 : 1) - (b.isAdmin ? 0 : 1); break;
+    case "role":
+    default: res = roleRank(a) - roleRank(b); break;
+  }
+  // Stable tie-break by name so equal groups stay readable.
+  if (res === 0 && sortKey !== "name") res = (a.name || "").localeCompare(b.name || "", "he");
+  return res * sortDir;
+}
+
+function updateSortHeaders(container) {
+  container.querySelectorAll("th[data-sort]").forEach((th) => {
+    const base = th.textContent.replace(/[▲▼]\s*$/, "").trim();
+    th.textContent = th.dataset.sort === sortKey ? `${base} ${sortDir === 1 ? "▲" : "▼"}` : base;
+  });
+}
 
 // Permissions:
 // - Admins / super-admin manage all users.
@@ -69,15 +109,15 @@ export function renderUsers(container) {
 
     <div class="modal-note" style="margin-bottom:14px">
       <strong>שים לב</strong>
-      <span>לא ניתן לאפס סיסמה או לשנות שם משתמש למשתמש קיים. כדי לאפס סיסמה או להחליף שם משתמש — יש למחוק את המשתמש וליצור אותו מחדש.</span>
+      <span>אפשר לשנות סיסמה ושם משתמש למשתמש קיים דרך הכפתורים שבשורת המשתמש, בלי למחוק וליצור מחדש.</span>
     </div>
 
     <div class="table-wrap">
       <table class="data">
         <thead>
           <tr>
-            <th>שם העובד</th><th>מס' עובד</th><th>אימייל</th>
-            <th>תפקיד</th><th>סטטוס מנהל</th><th>נוצר</th><th>פעולות</th>
+            <th data-sort="name" class="sortable">שם העובד</th><th data-sort="employeeNumber" class="sortable">מס' עובד</th><th data-sort="username" class="sortable">שם משתמש</th>
+            <th data-sort="role" class="sortable">תפקיד</th><th data-sort="admin" class="sortable">סטטוס מנהל</th><th data-sort="created" class="sortable">נוצר</th><th>פעולות</th>
           </tr>
         </thead>
         <tbody id="usersTbody"><tr><td colspan="7" class="empty">טוען...</td></tr></tbody>
@@ -92,6 +132,18 @@ export function renderUsers(container) {
   container.querySelector("#addUserBtn").addEventListener("click", () => openAddUserModal());
   const logBtn = container.querySelector("#openLogBtn");
   if (logBtn) logBtn.addEventListener("click", () => { location.hash = "#/activity-log"; });
+
+  // Clickable column headers to sort the table.
+  container.querySelectorAll("th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      if (sortKey === key) sortDir = -sortDir;
+      else { sortKey = key; sortDir = 1; }
+      updateSortHeaders(container);
+      renderTable(container.querySelector("#usersTbody"));
+    });
+  });
+  updateSortHeaders(container);
 
   loadError = "";
   clearTimeout(initialLoadTimer);
@@ -145,12 +197,7 @@ function renderTable(tbody) {
     tbody.innerHTML = `<tr><td colspan="7" class="empty">אין משתמשים</td></tr>`;
     return;
   }
-  const sorted = visibleUsers.slice().sort((a, b) => {
-    const aS = a.isAdmin ? 0 : 1;
-    const bS = b.isAdmin ? 0 : 1;
-    if (aS !== bS) return aS - bS;
-    return (a.name || "").localeCompare(b.name || "", "he");
-  });
+  const sorted = visibleUsers.slice().sort(compareUsers);
 
   tbody.innerHTML = sorted.map((u) => {
     const superAdmin = isSuperAdminEmail(u.email);
@@ -159,7 +206,7 @@ function renderTable(tbody) {
       <tr data-uid="${escapeHtml(u.uid)}">
         <td>${escapeHtml(u.name || "")} ${isMe ? '<span class="badge blue">אתה</span>' : ""}</td>
         <td>${escapeHtml(u.employeeNumber || "")}</td>
-        <td>${escapeHtml(u.email || "")}</td>
+        <td>${escapeHtml(usernameOf(u))}</td>
         <td>${u.role === "ahmash" ? '<span class="badge amber">אחמ"ש</span>' : '<span class="badge blue">קב"ט</span>'}</td>
         <td>${superAdmin
         ? '<span class="badge purple">מנהל על</span>'
@@ -170,6 +217,8 @@ function renderTable(tbody) {
           ${superAdmin || !canManageTarget(u) ? '<span class="muted">מוגן</span>' : `
             <button class="btn btn-sm" data-action="edit">ערוך</button>
             ${isAdmin() ? `<button class="btn btn-sm btn-outline" data-action="toggleAdmin">${u.isAdmin ? "הורד הרשאת מנהל" : "הפוך למנהל"}</button>` : ""}
+            <button class="btn btn-sm btn-secondary" data-action="setPassword">שינוי סיסמה</button>
+            <button class="btn btn-sm btn-secondary" data-action="setUsername">שינוי שם משתמש</button>
             <button class="btn btn-sm btn-danger" data-action="delete">מחק</button>
           `}
         </td>
@@ -192,6 +241,8 @@ function renderTable(tbody) {
         if (!canManageTarget(u)) { toast("אין לך הרשאה לנהל משתמש זה", "error"); return; }
         if (action === "edit") openEditUserModal(u);
         if (action === "delete") onDelete(u);
+        if (action === "setPassword") openSetPasswordModal(u);
+        if (action === "setUsername") openSetUsernameModal(u);
       });
     });
   });
@@ -342,7 +393,7 @@ function userFormHtml({ user = null, requirePassword }) {
         <label class="field full"><span>שם משתמש</span>
           <input type="text" value="${escapeHtml(user?.username || usernameFromEmail(user?.email))}" disabled />
           <input type="hidden" id="u_email" value="${escapeHtml(user?.email || "")}" />
-          <small class="field-note">לא ניתן לשנות שם משתמש. כדי להחליף שם משתמש יש למחוק את המשתמש וליצור אותו מחדש.</small>
+          <small class="field-note">לשינוי שם המשתמש השתמש בכפתור "שינוי שם משתמש" שבשורת המשתמש.</small>
         </label>
         `}
         ${requirePassword ? `
@@ -427,7 +478,7 @@ function wirePasswordToggles(root) {
   });
 }
 
-function validateUsername(username) {
+function validateUsername(username, excludeUid = null) {
   if (!username) throw new Error("יש למלא שם משתמש");
   if (/\s/.test(username)) throw new Error("שם המשתמש לא יכול להכיל רווחים");
   // מותר: אותיות אנגלית, מספרים, אותיות עברית והתווים . _ -
@@ -438,7 +489,7 @@ function validateUsername(username) {
     throw new Error(`שם המשתמש חייב להכיל לפחות ${USERNAME_MIN_LENGTH} תווים`);
   }
   const emailToCheck = usernameToEmailLocal(username) + USERNAME_DOMAIN;
-  if (allUsers.some((u) => u.email?.toLowerCase() === emailToCheck)) {
+  if (allUsers.some((u) => u.uid !== excludeUid && u.email?.toLowerCase() === emailToCheck)) {
     throw new Error("שם המשתמש כבר תפוס");
   }
 }
@@ -524,6 +575,114 @@ async function onDelete(u) {
     });
     toast("המשתמש נמחק לגמרי מ-Firebase", "success", 4000);
   } catch (e) { toast(callableErrorMessage(e, "שגיאה במחיקת המשתמש"), "error"); }
+}
+
+function openSetPasswordModal(user) {
+  const modal = openModal({
+    title: `שינוי סיסמה: ${user.name || usernameFromEmail(user.email)}`,
+    large: true,
+    bodyHtml: `
+      <form class="user-form">
+        <div class="modal-note">
+          <strong>שינוי סיסמה למשתמש</strong>
+          <span>הסיסמה החדשה תעודכן ישירות ב-Firebase Authentication בלי שליחת מייל למשתמש.</span>
+        </div>
+        <div class="form-grid compact-grid">
+          ${passwordFieldHtml({ id: "set_pwd", label: "סיסמה חדשה", required: true, note: PASSWORD_RULE_TEXT })}
+          ${passwordFieldHtml({ id: "set_pwd_confirm", label: "אימות סיסמה חדשה", required: true })}
+        </div>
+      </form>`,
+    footerButtons: [
+      { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
+      {
+        label: "שמור סיסמה",
+        className: "btn-success",
+        id: "savePasswordBtn",
+        onClick: async ({ body, close }) => {
+          const button = document.getElementById("savePasswordBtn");
+          button.disabled = true;
+          button.innerHTML = `<span class="spinner"></span> שומר...`;
+          try {
+            const password = body.querySelector("#set_pwd").value;
+            const confirmPassword = body.querySelector("#set_pwd_confirm").value;
+            if (!password || !confirmPassword) throw new Error("יש למלא את שני שדות הסיסמה");
+            if (password !== confirmPassword) throw new Error("אימות הסיסמה לא תואם");
+            await setUserPasswordCall({ targetUid: user.uid, newPassword: password });
+            await logActivity({
+              action: "user.set_password",
+              entityType: "user",
+              entityId: user.uid,
+              summary: `${actorLabel()} שינה סיסמה עבור ${user.name || user.email}`,
+              detailLines: [`אימייל: ${user.email || "לא ידוע"}`]
+            });
+            toast("הסיסמה עודכנה בהצלחה", "success");
+            close();
+          } catch (e) {
+            toast(callableErrorMessage(e, "שגיאה בעדכון הסיסמה"), "error");
+            button.disabled = false;
+            button.textContent = "שמור סיסמה";
+          }
+        }
+      }
+    ]
+  });
+
+  wirePasswordToggles(modal.body);
+}
+
+function openSetUsernameModal(user) {
+  const currentUsername = user.username || usernameFromEmail(user.email);
+  openModal({
+    title: `שינוי שם משתמש: ${user.name || currentUsername}`,
+    large: true,
+    bodyHtml: `
+      <form class="user-form">
+        <div class="modal-note">
+          <strong>שינוי שם המשתמש (כניסה)</strong>
+          <span>שם המשתמש משמש להתחברות. לאחר השינוי המשתמש יתחבר עם השם החדש והסיסמה הקיימת.</span>
+        </div>
+        <div class="form-grid">
+          <label class="field full"><span>שם משתמש נוכחי</span>
+            <input type="text" value="${escapeHtml(currentUsername)}" disabled />
+          </label>
+          <label class="field full"><span>שם משתמש חדש</span>
+            <input type="text" id="new_username" autocomplete="off" placeholder="לדוגמה: david123 / 22000 / דוד" />
+            <small class="field-note">לפחות 5 תווים — אותיות (אנגלית או עברית) או מספרים, ללא רווחים.</small>
+          </label>
+        </div>
+      </form>`,
+    footerButtons: [
+      { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
+      {
+        label: "שמור שם משתמש",
+        className: "btn-success",
+        id: "saveUsernameBtn",
+        onClick: async ({ body, close }) => {
+          const button = document.getElementById("saveUsernameBtn");
+          button.disabled = true;
+          button.innerHTML = `<span class="spinner"></span> שומר...`;
+          try {
+            const newUsername = body.querySelector("#new_username").value.trim();
+            validateUsername(newUsername, user.uid);
+            const res = await setUsernameCall({ targetUid: user.uid, newUsername });
+            await logActivity({
+              action: "user.set_username",
+              entityType: "user",
+              entityId: user.uid,
+              summary: `${actorLabel()} שינה שם משתמש עבור ${user.name || user.email}`,
+              detailLines: [`שם משתמש חדש: ${res?.data?.username || newUsername}`]
+            });
+            toast("שם המשתמש עודכן בהצלחה", "success");
+            close();
+          } catch (e) {
+            toast(callableErrorMessage(e, "שגיאה בעדכון שם המשתמש"), "error");
+            button.disabled = false;
+            button.textContent = "שמור שם משתמש";
+          }
+        }
+      }
+    ]
+  });
 }
 
 // Helper: ensures the super admin has a /users record (auto-created at login).

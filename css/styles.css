@@ -960,6 +960,16 @@ table.data th {
   white-space: nowrap;
 }
 
+table.data th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+table.data th.sortable:hover {
+  background: linear-gradient(180deg, #eaf3ff, #dcebff);
+  color: #1e3a8a;
+}
+
 table.data tbody tr {
   background: rgba(255, 255, 255, 0.82);
   cursor: pointer;

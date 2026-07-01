@@ -6,7 +6,9 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const SUPER_ADMIN_EMAIL = "Doronenakache@gmail.com";
-const PASSWORD_RULE = /^.{5,}$/;
+const PASSWORD_RULE = /^.{6,}$/;
+const USERNAME_DOMAIN = "@aovdim.com";
+const USERNAME_MIN_LENGTH = 5;
 const ACTIVITY_LOGS_COLLECTION = "activityLogs";
 const ACTIVITY_LOG_RETENTION_DAYS = 31;
 
@@ -22,8 +24,35 @@ function assertStrongPassword(password) {
     if (!PASSWORD_RULE.test(password)) {
         throw new HttpsError(
             "invalid-argument",
-            "הסיסמה חייבת להכיל לפחות 5 תווים (מספרים בלבד זה בסדר, לדוגמה 22000)"
+            "הסיסמה חייבת להכיל לפחות 6 תווים (אותיות או מספרים)"
         );
+    }
+}
+
+// Mirror of the client's usernameToEmailLocal (js/utils.js): ASCII usernames stay
+// as-is; non-ASCII (Hebrew) usernames are encoded to a deterministic ASCII form.
+function usernameToEmailLocal(rawUsername) {
+    const username = normalizedString(rawUsername).toLowerCase();
+    if (!username) return "";
+    if (/^[a-z0-9._-]+$/.test(username)) return username;
+    const bytes = Buffer.from(username, "utf8");
+    let hex = "";
+    for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+    return "u" + hex;
+}
+
+function assertValidUsername(username) {
+    if (!username) {
+        throw new HttpsError("invalid-argument", "יש למלא שם משתמש");
+    }
+    if (/\s/.test(username)) {
+        throw new HttpsError("invalid-argument", "שם המשתמש לא יכול להכיל רווחים");
+    }
+    if (!/^[a-zA-Z0-9._\-֐-׿]+$/.test(username)) {
+        throw new HttpsError("invalid-argument", "שם המשתמש יכול להכיל אנגלית, מספרים או עברית בלבד");
+    }
+    if ([...username].length < USERNAME_MIN_LENGTH) {
+        throw new HttpsError("invalid-argument", `שם המשתמש חייב להכיל לפחות ${USERNAME_MIN_LENGTH} תווים`);
     }
 }
 
@@ -159,8 +188,48 @@ exports.pruneActivityLogsMonthly = onSchedule({
     console.log(`[activity-log] monthly prune completed. deleted=${deletedCount}`);
 });
 
+exports.setUsername = onCall(async (request) => {
+    const actor = await requireUserManager(request);
+    const targetUid = normalizedString(request.data?.targetUid);
+    const newUsername = normalizedString(request.data?.newUsername);
+
+    if (!targetUid) {
+        throw new HttpsError("invalid-argument", "חסר מזהה משתמש");
+    }
+    assertValidUsername(newUsername);
+
+    const newEmail = usernameToEmailLocal(newUsername) + USERNAME_DOMAIN;
+
+    const target = await getTargetUser(targetUid);
+    if (!target.authUser) {
+        throw new HttpsError("not-found", "החשבון לא נמצא ב-Firebase Authentication");
+    }
+    await assertManageableTarget(actor, target, { allowSelfDelete: true });
+
+    // Reject if the new email/username already belongs to a different account.
+    try {
+        const existing = await admin.auth().getUserByEmail(newEmail);
+        if (existing.uid !== targetUid) {
+            throw new HttpsError("already-exists", "שם המשתמש כבר תפוס");
+        }
+    } catch (error) {
+        if (error instanceof HttpsError) throw error;
+        if (error?.code !== "auth/user-not-found") throw error;
+    }
+
+    await admin.auth().updateUser(targetUid, { email: newEmail });
+    await db.collection("users").doc(targetUid).set({
+        email: newEmail,
+        username: newUsername,
+        usernameUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        usernameUpdatedBy: actor.uid
+    }, { merge: true });
+
+    return { ok: true, email: newEmail, username: newUsername };
+});
+
 exports.setUserPassword = onCall(async (request) => {
-    const actor = await requireAdmin(request);
+    const actor = await requireUserManager(request);
     const targetUid = normalizedString(request.data?.targetUid);
     const newPassword = normalizedString(request.data?.newPassword);
 
