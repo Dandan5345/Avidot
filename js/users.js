@@ -21,7 +21,7 @@ import { logActivity } from "./activityLog.js";
 
 const COLLECTION = "users";
 const PASSWORD_RULE = /^.{5,}$/;
-const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 5 תווים (מספרים בלבד זה בסדר, לדוגמה 22000)';
+const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 5 תווים — אותיות או מספרים (לדוגמה: 22000)';
 const USERNAME_DOMAIN = "@aovdim.com";
 // שם המשתמש חייב להכיל לפחות 5 תווים ולא יכול להכיל רווחים.
 // מותר: אנגלית, מספרים בלבד, ועברית.
@@ -306,7 +306,7 @@ function userFormHtml({ user = null, requirePassword }) {
         ${!user ? `
         <label class="field full"><span>שם משתמש</span>
           <input type="text" id="u_username" required autocomplete="off" placeholder="לדוגמה: david123 / 22000 / דוד" />
-          <small class="field-note">אנגלית, מספרים בלבד או עברית — לפחות 5 תווים, ללא רווחים.</small>
+          <small class="field-note">לפחות 5 תווים — אותיות (אנגלית או עברית) או מספרים, ללא רווחים.</small>
         </label>
         ` : `
         <label class="field full"><span>אימייל</span>
