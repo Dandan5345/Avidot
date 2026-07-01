@@ -293,11 +293,11 @@ export function renderLogin(container) {
           <div id="loginError" class="login-error" style="display:none"></div>
           <label class="field">
             <span>שם משתמש</span>
-            <input type="text" id="loginUsername" required autocomplete="username" />
+            <input type="text" id="loginUsername" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" />
           </label>
           <label class="field">
             <span>סיסמה</span>
-            <input type="password" id="loginPassword" required autocomplete="current-password" />
+            <input type="password" id="loginPassword" required autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" dir="ltr" />
           </label>
           <button class="btn btn-block" type="submit" id="loginBtn">התחבר</button>
           <p class="muted" style="margin-top:14px;text-align:center">
@@ -315,9 +315,10 @@ export function renderLogin(container) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     errEl.style.display = "none";
-    const username = container.querySelector("#loginUsername").value.trim();
+    const username = cleanLoginText(container.querySelector("#loginUsername").value);
     const usernameLower = username.toLowerCase();
     const password = container.querySelector("#loginPassword").value;
+    const passwordVariants = loginPasswordVariants(password);
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
     try {
@@ -328,7 +329,7 @@ export function renderLogin(container) {
       const matches = await findDocumentsByField("users", "usernameLower", usernameLower);
       const candidate = matches.find((u) => u.passwordHash && u.passwordSalt);
       if (candidate) {
-        const ok = await verifyPassword(candidate.passwordSalt, candidate.passwordHash, password);
+        const ok = await verifyPasswordVariants(candidate.passwordSalt, candidate.passwordHash, passwordVariants);
         if (!ok) throw { code: "firestore/wrong-credential" };
         localStorage.setItem(FIRESTORE_SESSION_KEY, candidate.id);
         hasNotifiedSignedOut = false;
@@ -374,6 +375,8 @@ export function renderLogin(container) {
         msg = "יותר מדי ניסיונות התחברות. נסה שוב מאוחר יותר.";
       } else if (code.includes("network")) {
         msg = "שגיאת רשת — בדוק את החיבור לאינטרנט";
+      } else if (code.includes("unauthorized-domain")) {
+        msg = "הכתובת שממנה פתחת את האתר לא מאושרת ב-Firebase. פתח את האתר מהדומיין הרשמי או הוסף את הכתובת הזו ל-Authorized domains.";
       } else if (code.includes("operation-not-allowed")) {
         msg = "התחברות עם אימייל/סיסמה לא מופעלת ב-Firebase. יש להפעיל אותה ב-Firebase Console → Authentication → Sign-in method.";
       } else if (code.includes("configuration-not-found")) {
@@ -390,6 +393,34 @@ export function renderLogin(container) {
       btn.textContent = "התחבר";
     }
   });
+}
+
+function cleanLoginText(value) {
+  return String(value || "")
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .trim();
+}
+
+function loginPasswordVariants(rawPassword) {
+  const raw = String(rawPassword || "").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "");
+  const variants = [raw];
+  const trimmed = raw.trim();
+  if (trimmed !== raw) variants.push(trimmed);
+
+  for (const value of [raw, trimmed]) {
+    if (/^[Mצ]\d+$/.test(value)) {
+      variants.push(`m${value.slice(1)}`);
+    }
+  }
+
+  return [...new Set(variants)];
+}
+
+async function verifyPasswordVariants(salt, hash, variants) {
+  for (const value of variants) {
+    if (await verifyPassword(salt, hash, value)) return true;
+  }
+  return false;
 }
 
 export function userDisplayLabel() {

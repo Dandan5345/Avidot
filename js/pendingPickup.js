@@ -260,8 +260,8 @@ async function openAddModal({ prefill = null } = {}) {
             <small class="field-note">מספר הטלפון שבו תיאמתם את האיסוף או שאפשר לחזור אליו.</small>
           </label>
           <label class="field"><span>תעודת זהות בעל האבידה</span>
-            <input type="text" id="f_ownerId" value="${escapeHtml(prefill && prefill.ownerId || "")}" required />
-            <small class="field-note">מספר מזהה של בעל האבידה, כדי לוודא שהמסירה מתבצעת לאדם הנכון.</small>
+            <input type="text" id="f_ownerId" value="${escapeHtml(prefill && prefill.ownerId || "")}" />
+            <small class="field-note">אופציונלי בשלב הרישום. חובה להזין תעודת זהות בזמן החזרת האבידה.</small>
           </label>
           <label class="field full"><span>איפה האבידה נמצאת כרגע</span>
             <input type="text" id="f_currentLocation" value="${escapeHtml(prefill && prefill.currentLocation || "")}" required />
@@ -297,7 +297,7 @@ async function openAddModal({ prefill = null } = {}) {
       const ownerName = body.querySelector("#f_ownerName").value.trim();
       const ownerPhone = body.querySelector("#f_ownerPhone").value.trim();
       const ownerId = body.querySelector("#f_ownerId").value.trim();
-      if (!ownerName || !ownerPhone || !ownerId) throw new Error("יש להזין שם, טלפון ותעודת זהות של בעל האבידה");
+      if (!ownerName || !ownerPhone) throw new Error("יש להזין שם וטלפון של בעל האבידה");
 
       let photoUrl = (prefill && prefill.photoUrl) || null;
       try {
@@ -350,7 +350,7 @@ async function openAddModal({ prefill = null } = {}) {
           detailLines: [
             `בעל האבידה: ${ownerName}`,
             `טלפון: ${ownerPhone}`,
-            `תעודת זהות: ${ownerId}`
+            `תעודת זהות: ${ownerId || "לא הוזנה"}`
           ],
           metadata: {
             sourceCollection: prefill.__sourceCollection,
@@ -368,7 +368,7 @@ async function openAddModal({ prefill = null } = {}) {
             `מספר אבידה: ${number}`,
             `בעל האבידה: ${ownerName}`,
             `טלפון: ${ownerPhone}`,
-            `תעודת זהות: ${ownerId}`
+            `תעודת זהות: ${ownerId || "לא הוזנה"}`
           ],
           metadata: { targetCollection: COLLECTION }
         });
@@ -464,9 +464,9 @@ function openReturnFormModal(item) {
           <input type="text" id="r_receiverName" value="${escapeHtml(item.ownerName || "")}" required />
           <small class="field-note">רשמו את האדם שקיבל את האבידה בפועל, גם אם מישהו אחר תיאם את האיסוף.</small>
         </label>
-        <label class="field full"><span>טלפון או תעודת זהות</span>
-          <input type="text" id="r_receiverContact" value="${escapeHtml(item.ownerPhone || "")}" required />
-          <small class="field-note">מספר מזהה שעוזר לוודא מי אסף את הפריט.</small>
+        <label class="field full"><span>תעודת זהות של המקבל</span>
+          <input type="text" id="r_receiverContact" value="${escapeHtml(item.ownerId || "")}" required />
+          <small class="field-note">יש להזין תעודת זהות בזמן המסירה כדי לוודא מי אסף את הפריט.</small>
         </label>
         <label class="field full"><span>שם הקב"ט שטיפל</span>
           <input type="text" id="r_handlerName" value="${escapeHtml(currentUser.name || "")}" required />
@@ -481,7 +481,7 @@ function openReturnFormModal(item) {
           const receiverName = body.querySelector("#r_receiverName").value.trim();
           const receiverContact = body.querySelector("#r_receiverContact").value.trim();
           const handlerName = body.querySelector("#r_handlerName").value.trim();
-          if (!receiverName || !receiverContact || !handlerName) { toast("יש למלא את כל השדות", "error"); return; }
+          if (!receiverName || !receiverContact || !handlerName) { toast("יש למלא שם מקבל, תעודת זהות ושם קב\"ט", "error"); return; }
           try {
             if (!signatureController || signatureController.isEmpty()) {
               toast("יש לאסוף חתימה דיגיטלית של בעל האבידה", "error");
@@ -506,7 +506,7 @@ function openReturnFormModal(item) {
               summary: `${actorLabel()} החזיר את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
               detailLines: [
                 `המקבל: ${receiverName}`,
-                `זיהוי מקבל: ${receiverContact}`,
+                `תעודת זהות מקבל: ${receiverContact}`,
                 `קב"ט שטיפל: ${handlerName}`
               ],
               metadata: { sourceCollection: COLLECTION }

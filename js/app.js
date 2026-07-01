@@ -21,6 +21,7 @@ const homeBtn = document.getElementById("homeBtn");
 const brandLink = document.getElementById("brandLink");
 const appFooter = document.getElementById("appFooter");
 const DOUBLE_TAP_THRESHOLD_MS = 300;
+const SERVICE_WORKER_RELOAD_KEY = "avidot_sw_reloaded_once";
 
 let currentTeardown = null;
 let isSignedIn = false;
@@ -34,9 +35,30 @@ appEl.innerHTML = `<div class="section-card"><p>טוען...</p></div>`;
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
 
+  if (sessionStorage.getItem(SERVICE_WORKER_RELOAD_KEY) === "1") {
+    window.setTimeout(() => sessionStorage.removeItem(SERVICE_WORKER_RELOAD_KEY), 3000);
+  }
+
+  let hadController = !!navigator.serviceWorker.controller;
+  let isRefreshingForUpdate = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
+    if (isRefreshingForUpdate) return;
+    isRefreshingForUpdate = true;
+    if (sessionStorage.getItem(SERVICE_WORKER_RELOAD_KEY) === "1") return;
+    sessionStorage.setItem(SERVICE_WORKER_RELOAD_KEY, "1");
+    window.location.reload();
+  });
+
   window.addEventListener("load", () => {
     navigator.serviceWorker
-      .register(new URL("../sw.js", import.meta.url), { scope: "./" })
+      .register(new URL("../sw.js", import.meta.url), { scope: "./", updateViaCache: "none" })
+      .then((registration) => registration.update().catch((error) => {
+        console.warn("[pwa] service worker update check failed:", error);
+      }))
       .catch((error) => console.warn("[pwa] service worker registration failed:", error));
   }, { once: true });
 }

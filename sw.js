@@ -1,4 +1,4 @@
-const CACHE_NAME = "avidot-shell-v6";
+const CACHE_NAME = "avidot-shell-v10";
 const APP_SHELL = [
     "./",
     "./index.html",
@@ -21,6 +21,44 @@ const APP_SHELL = [
     "./js/utils.js",
     "./icons/app-icon.svg"
 ];
+
+function isCacheableBasicResponse(response) {
+    return response && response.status === 200 && response.type === "basic";
+}
+
+function shouldUseNetworkFirst(request, url) {
+    if (request.mode === "navigate") return true;
+    if (["document", "script", "style", "manifest"].includes(request.destination)) return true;
+    return /\.(html|js|css|webmanifest)$/i.test(url.pathname);
+}
+
+async function networkFirst(request) {
+    try {
+        const networkResponse = await fetch(request, { cache: "reload" });
+        if (isCacheableBasicResponse(networkResponse)) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, networkResponse.clone());
+        }
+        return networkResponse;
+    } catch (_) {
+        const cachedResponse = await caches.match(request);
+        if (cachedResponse) return cachedResponse;
+        if (request.mode === "navigate") return caches.match("./index.html");
+        throw _;
+    }
+}
+
+async function cacheFirst(request) {
+    const cachedResponse = await caches.match(request);
+    if (cachedResponse) return cachedResponse;
+
+    const networkResponse = await fetch(request);
+    if (isCacheableBasicResponse(networkResponse)) {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+}
 
 self.addEventListener("install", (event) => {
     event.waitUntil(
@@ -46,26 +84,5 @@ self.addEventListener("fetch", (event) => {
     const url = new URL(request.url);
     if (url.origin !== self.location.origin) return;
 
-    if (request.mode === "navigate") {
-        event.respondWith(
-            fetch(request).catch(() => caches.match("./index.html"))
-        );
-        return;
-    }
-
-    event.respondWith(
-        caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) return cachedResponse;
-
-            return fetch(request).then((networkResponse) => {
-                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== "basic") {
-                    return networkResponse;
-                }
-
-                const copy = networkResponse.clone();
-                void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-                return networkResponse;
-            });
-        })
-    );
+    event.respondWith(shouldUseNetworkFirst(request, url) ? networkFirst(request) : cacheFirst(request));
 });
