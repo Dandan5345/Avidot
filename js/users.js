@@ -20,8 +20,7 @@ import {
 import { logActivity } from "./activityLog.js";
 
 const COLLECTION = "users";
-const PASSWORD_RULE = /^.{5,}$/;
-const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 5 תווים — אותיות או מספרים (לדוגמה: 22000)';
+const PASSWORD_RULE_TEXT = 'לפחות 6 תווים — אותיות או מספרים (לדוגמה: 220000)';
 const USERNAME_DOMAIN = "@aovdim.com";
 // שם המשתמש חייב להכיל לפחות 5 תווים ולא יכול להכיל רווחים.
 // מותר: אנגלית, מספרים בלבד, ועברית.
@@ -350,7 +349,6 @@ function readUserForm(body, { requirePassword }) {
     validateUsername(username);
     email = usernameToEmailLocal(username) + USERNAME_DOMAIN;
     if (!password) throw new Error("יש למלא סיסמה");
-    assertStrongPassword(password);
   } else {
     const emailField = body.querySelector("#u_email");
     email = emailField ? emailField.value.trim() : "";
@@ -380,12 +378,6 @@ function wirePasswordToggles(root) {
       button.textContent = shouldShow ? "הסתר" : "הצג";
     });
   });
-}
-
-function assertStrongPassword(password) {
-  if (!PASSWORD_RULE.test(password)) {
-    throw new Error(PASSWORD_RULE_TEXT);
-  }
 }
 
 function validateUsername(username) {
@@ -517,7 +509,6 @@ function openSetPasswordModal(user) {
             const confirmPassword = body.querySelector("#set_pwd_confirm").value;
             if (!password || !confirmPassword) throw new Error("יש למלא את שני שדות הסיסמה");
             if (password !== confirmPassword) throw new Error("אימות הסיסמה לא תואם");
-            assertStrongPassword(password);
             await setUserPasswordCall({ targetUid: user.uid, newPassword: password });
             await logActivity({
               action: "user.set_password",
