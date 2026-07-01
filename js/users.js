@@ -20,6 +20,7 @@ import { logActivity } from "./activityLog.js";
 
 const COLLECTION = "users";
 const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 6 תווים ולכלול אותיות ומספרים. המלצה: האות m ומספר העובד (לדוגמה: m21000).';
+const KABAT_AUTO_PASSWORD_TEXT = 'לקב"ט חדש הסיסמה מתמלאת אוטומטית לפי האות m ומספר העובד (לדוגמה: m21900).';
 // Domain kept only to recognize legacy (pre-Firestore) usernames for uniqueness checks.
 const USERNAME_DOMAIN = "@aovdim.com";
 // שם המשתמש חייב להכיל לפחות 5 תווים ולא יכול להכיל רווחים.
@@ -374,6 +375,7 @@ function openUserModal({ title, submitLabel, submitId, requirePassword, user = n
   });
 
   wirePasswordToggles(modal.body);
+  wireKabatPasswordAutofill(modal.body, { requirePassword, user });
   return modal;
 }
 
@@ -405,7 +407,7 @@ function userFormHtml({ user = null, requirePassword }) {
     id: "u_pwd",
     label: "סיסמה",
     required: true,
-    note: PASSWORD_RULE_TEXT
+    note: KABAT_AUTO_PASSWORD_TEXT
   })}` : ""}
         ${isRestrictedAhmash() ? `
         <label class="field"><span>תפקיד</span>
@@ -435,7 +437,7 @@ function readUserForm(body, { requirePassword }) {
   const restricted = isRestrictedAhmash();
   const role = restricted ? "kabat" : (roleField ? roleField.value : "kabat");
   const isAdmin = restricted ? false : (adminField ? adminField.checked : false);
-  const password = requirePassword ? body.querySelector("#u_pwd").value : "";
+  let password = requirePassword ? body.querySelector("#u_pwd").value : "";
 
   if (!name) throw new Error("יש למלא שם עובד");
   if (!role) throw new Error("יש לבחור תפקיד");
@@ -447,6 +449,11 @@ function readUserForm(body, { requirePassword }) {
   if (requirePassword) {
     const usernameField = body.querySelector("#u_username");
     username = usernameField ? usernameField.value.trim() : "";
+    if (role === "kabat") {
+      if (!employeeNumber) throw new Error('יש למלא מספר עובד כדי ליצור סיסמה אוטומטית לקב"ט');
+      password = kabatDefaultPassword(employeeNumber);
+      if (password.length < 6) throw new Error("מספר העובד חייב להכיל לפחות 5 תווים כדי ליצור סיסמה אוטומטית תקינה");
+    }
     if (!password) throw new Error("יש למלא סיסמה");
     if (password.length < 6) throw new Error("הסיסמה חייבת להכיל לפחות 6 תווים");
   }
@@ -458,7 +465,7 @@ function passwordFieldHtml({ id, label, value = "", required = false, note = "" 
   return `
     <label class="field full"><span>${label}</span>
       <div class="password-shell">
-        <input type="password" id="${id}" value="${escapeHtml(value)}" ${required ? "required" : ""} minlength="5" autocomplete="new-password" />
+        <input type="password" id="${id}" value="${escapeHtml(value)}" ${required ? "required" : ""} minlength="6" autocomplete="new-password" />
         <button type="button" class="password-toggle" data-toggle-password="${id}">הצג</button>
       </div>
       ${note ? `<small class="field-note">${escapeHtml(note)}</small>` : ""}
@@ -475,6 +482,38 @@ function wirePasswordToggles(root) {
       button.textContent = shouldShow ? "הסתר" : "הצג";
     });
   });
+}
+
+function wireKabatPasswordAutofill(root, { requirePassword, user }) {
+  if (!requirePassword || user) return;
+  const employeeField = root.querySelector("#u_emp");
+  const roleField = root.querySelector("#u_role");
+  const passwordField = root.querySelector("#u_pwd");
+  if (!employeeField || !passwordField) return;
+
+  const updatePassword = () => {
+    const isKabat = !roleField || roleField.value === "kabat";
+    if (isKabat) {
+      passwordField.value = kabatDefaultPassword(employeeField.value.trim());
+      passwordField.readOnly = true;
+      passwordField.dataset.autoKabatPassword = "true";
+      return;
+    }
+
+    if (passwordField.dataset.autoKabatPassword === "true") {
+      passwordField.value = "";
+    }
+    passwordField.readOnly = false;
+    delete passwordField.dataset.autoKabatPassword;
+  };
+
+  employeeField.addEventListener("input", updatePassword);
+  if (roleField) roleField.addEventListener("change", updatePassword);
+  updatePassword();
+}
+
+function kabatDefaultPassword(employeeNumber) {
+  return employeeNumber ? `m${employeeNumber}` : "";
 }
 
 function validateUsername(username, excludeUid = null) {
