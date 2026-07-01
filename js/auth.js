@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
 import { auth, isSuperAdminEmail } from "./firebase.js";
 import { getDocument } from "./firestoreStore.js";
-import { escapeHtml } from "./utils.js";
+import { escapeHtml, usernameToEmailLocal } from "./utils.js";
 
 // Current user snapshot used across the app.
 // Shape: { uid, email, name, employeeNumber, role, isAdmin, isSuperAdmin }
@@ -215,7 +215,7 @@ export function renderLogin(container) {
     e.preventDefault();
     errEl.style.display = "none";
     const username = container.querySelector("#loginUsername").value.trim();
-    const email = username.toLowerCase() + "@aovdim.com";
+    const emailLocal = usernameToEmailLocal(username);
     const password = container.querySelector("#loginPassword").value;
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> מתחבר...`;
@@ -224,7 +224,7 @@ export function renderLogin(container) {
       let lastErr = null;
       for (const domain of ["@aovdim.com", "@gmail.com"]) {
         try {
-          await signInWithEmailAndPassword(auth, username.toLowerCase() + domain, password);
+          await signInWithEmailAndPassword(auth, emailLocal + domain, password);
           lastErr = null;
           break;
         } catch (e) {
