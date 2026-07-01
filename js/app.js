@@ -228,7 +228,8 @@ watchAuth(
 
     // Auto-provision the super admin profile in the background. This must not
     // block navigation, because a slow database request would leave the app blank.
-    if (auth.currentUser) {
+    // Anonymous sessions (Firestore-based users) have no Auth account to provision.
+    if (auth.currentUser && !auth.currentUser.isAnonymous) {
       ensureSuperAdminProfile(auth.currentUser)
         .catch((e) => console.warn("[auth] ensureSuperAdminProfile failed:", e));
     }

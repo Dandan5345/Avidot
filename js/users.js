@@ -1,11 +1,9 @@
 // User management (admins only).
-// Uses a secondary Firebase Auth instance to create users without
-// replacing the current admin's session.
-import {
-  createUserWithEmailAndPassword, signOut as secondarySignOut
-} from "https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-functions.js";
-import { secondaryAuth, isSuperAdminEmail, functionsClient } from "./firebase.js";
+// Regular users live entirely in Firestore (username/usernameLower/passwordHash/
+// passwordSalt on the users/{id} doc) — no Firebase Auth account, no Cloud
+// Functions/Admin SDK. Only the super admin still uses Firebase Auth; it never
+// appears in this table. See project memory "firestore-auth-migration-plan".
+import { isSuperAdminEmail } from "./firebase.js";
 import {
   createDocument,
   deleteDocument,
@@ -15,17 +13,18 @@ import {
 } from "./firestoreStore.js";
 import { isAdmin, isAhmash, currentUser } from "./auth.js";
 import {
-  escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime, usernameToEmailLocal, usernameFromEmail
+  escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime,
+  usernameToEmailLocal, usernameFromEmail, generateSalt, hashPassword
 } from "./utils.js";
 import { logActivity } from "./activityLog.js";
 
 const COLLECTION = "users";
 const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 6 תווים ולכלול אותיות ומספרים. המלצה: האות m ומספר העובד (לדוגמה: m21000).';
+// Domain kept only to recognize legacy (pre-Firestore) usernames for uniqueness checks.
 const USERNAME_DOMAIN = "@aovdim.com";
 // שם המשתמש חייב להכיל לפחות 5 תווים ולא יכול להכיל רווחים.
 // מותר: אנגלית, מספרים בלבד, ועברית.
 const USERNAME_MIN_LENGTH = 5;
-const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
 
 let unsubscribe = null;
 let allUsers = [];
@@ -43,6 +42,11 @@ function roleRank(u) {
 
 function usernameOf(u) {
   return u.username || usernameFromEmail(u.email);
+}
+
+// A user who has completed the Firestore migration (has a password hash).
+function isFirestoreAuth(u) {
+  return !!(u && u.passwordHash && u.passwordSalt);
 }
 
 function compareUsers(a, b) {
@@ -107,7 +111,7 @@ export function renderUsers(container) {
 
     <div class="modal-note" style="margin-bottom:14px">
       <strong>שים לב</strong>
-      <span>שינוי סיסמה או שם משתמש נעשה דרך הכפתורים שבשורת המשתמש. המערכת יוצרת מחדש את המשתמש עם אותם פרטים בדיוק (שם, מספר עובד, תפקיד והרשאות) ורק עם השינוי המבוקש. שינוי שם משתמש דורש הזנת סיסמה מחדש (לא ניתן לשחזר סיסמה קיימת).</span>
+      <span>שינוי סיסמה או שם משתמש נעשה דרך הכפתורים שבשורת המשתמש ומעדכן רק את הפרט המבוקש — שאר הפרטים (שם, מספר עובד, תפקיד והרשאות) נשארים ללא שינוי. משתמשים ישנים שטרם הועברו לכניסה דרך פיירסטור מסומנים בכפתור "החלף למשתמש פיירסטור".</span>
     </div>
 
     <div class="table-wrap">
@@ -122,8 +126,8 @@ export function renderUsers(container) {
       </table>
     </div>
     <p class="muted" style="margin-top:10px">
-      הערה: סיסמאות נשמרות באופן מאובטח על ידי Firebase Authentication ואינן מוצגות כאן.
-      מחיקת משתמש מוחקת אותו לגמרי גם מ-Firebase Authentication.
+      הערה: הסיסמאות נשמרות באופן מוצפן (hash) במסד הנתונים ואינן מוצגות כאן.
+      מחיקת משתמש מוחקת את כרטיס המשתמש לגמרי.
     </p>
   `;
 
@@ -215,8 +219,12 @@ function renderTable(tbody) {
           ${superAdmin || !canManageTarget(u) ? '<span class="muted">מוגן</span>' : `
             <button class="btn btn-sm" data-action="edit">ערוך</button>
             ${isAdmin() ? `<button class="btn btn-sm btn-outline" data-action="toggleAdmin">${u.isAdmin ? "הורד הרשאת מנהל" : "הפוך למנהל"}</button>` : ""}
-            <button class="btn btn-sm btn-secondary" data-action="setPassword">שינוי סיסמה</button>
-            <button class="btn btn-sm btn-secondary" data-action="setUsername">שינוי שם משתמש</button>
+            ${isFirestoreAuth(u) ? `
+              <button class="btn btn-sm btn-secondary" data-action="setPassword">שינוי סיסמה</button>
+              <button class="btn btn-sm btn-secondary" data-action="setUsername">שינוי שם משתמש</button>
+            ` : `
+              <button class="btn btn-sm btn-warn" data-action="migrate">החלף למשתמש פיירסטור</button>
+            `}
             <button class="btn btn-sm btn-danger" data-action="delete">מחק</button>
           `}
         </td>
@@ -241,6 +249,7 @@ function renderTable(tbody) {
         if (action === "delete") onDelete(u);
         if (action === "setPassword") openSetPasswordModal(u);
         if (action === "setUsername") openSetUsernameModal(u);
+        if (action === "migrate") openMigrateUserModal(u);
       });
     });
   });
@@ -257,21 +266,23 @@ function openAddUserModal() {
       button.innerHTML = `<span class="spinner"></span> יוצר...`;
       try {
         const form = readUserForm(body, { requirePassword: true });
-        const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
-        const newUid = cred.user.uid;
+        validateUsername(form.username);
+        const salt = generateSalt();
+        const passwordHash = await hashPassword(salt, form.password);
 
-        await createDocument(COLLECTION, {
+        const newUid = await createDocument(COLLECTION, {
           name: form.name,
           employeeNumber: form.employeeNumber,
-          email: form.email,
           username: form.username,
+          usernameLower: form.username.toLowerCase(),
+          passwordHash,
+          passwordSalt: salt,
+          firestoreAuth: true,
           role: form.role,
-          isAdmin: form.isAdmin || isSuperAdminEmail(form.email),
+          isAdmin: form.isAdmin,
           createdAt: new Date().toISOString(),
           createdBy: currentUser.uid
-        }, newUid);
-
-        try { await secondarySignOut(secondaryAuth); } catch (_) { }
+        });
 
         await logActivity({
           action: "user.create",
@@ -279,7 +290,7 @@ function openAddUserModal() {
           entityId: newUid,
           summary: `${actorLabel()} יצר משתמש חדש: ${form.name}`,
           detailLines: [
-            `אימייל: ${form.email}`,
+            `שם משתמש: ${form.username}`,
             `מספר עובד: ${form.employeeNumber || "לא הוזן"}`,
             `תפקיד: ${form.role === "ahmash" ? 'אחמ"ש' : 'קב"ט'}`,
             `סטטוס מנהל: ${form.isAdmin ? "כן" : "לא"}`
@@ -290,11 +301,7 @@ function openAddUserModal() {
         close();
       } catch (e) {
         console.error(e);
-        let msg = e.message || "שגיאה ביצירת המשתמש";
-        if (e.code === "auth/email-already-in-use") msg = "שם המשתמש כבר תפוס במערכת";
-        else if (e.code === "auth/invalid-email") msg = "שם משתמש לא תקין";
-        else if (e.code === "auth/weak-password") msg = "סיסמה חלשה מדי";
-        toast(msg, "error");
+        toast(e.message || "שגיאה ביצירת המשתמש", "error");
         button.disabled = false;
         button.textContent = "צור משתמש";
       }
@@ -304,7 +311,7 @@ function openAddUserModal() {
 
 function openEditUserModal(user) {
   openUserModal({
-    title: `עריכת משתמש: ${user.name || user.email}`,
+    title: `עריכת משתמש: ${user.name || usernameOf(user)}`,
     submitLabel: "שמור שינויים",
     submitId: "saveUserBtn",
     requirePassword: false,
@@ -375,7 +382,7 @@ function userFormHtml({ user = null, requirePassword }) {
     <form class="user-form">
       <div class="modal-note">
         <strong>${user ? "עדכון פרטי משתמש" : "יצירת משתמש חדש"}</strong>
-        <span>${user ? "אפשר לעדכן שם, תפקיד, מספר עובד והרשאות. האימייל נשאר לקריאה בלבד כדי לא לשבור את ההתחברות." : "צור משתמש חדש עם פרטים מלאים והרשאות מתאימות."}</span>
+        <span>${user ? "אפשר לעדכן שם, תפקיד, מספר עובד והרשאות. שם המשתמש נשאר לקריאה בלבד כדי לא לשבור את ההתחברות." : "צור משתמש חדש עם פרטים מלאים והרשאות מתאימות."}</span>
       </div>
       <div class="form-grid compact-grid">
         <label class="field"><span>שם העובד</span>
@@ -389,8 +396,7 @@ function userFormHtml({ user = null, requirePassword }) {
         </label>
         ` : `
         <label class="field full"><span>שם משתמש</span>
-          <input type="text" value="${escapeHtml(user?.username || usernameFromEmail(user?.email))}" disabled />
-          <input type="hidden" id="u_email" value="${escapeHtml(user?.email || "")}" />
+          <input type="text" value="${escapeHtml(usernameOf(user))}" disabled />
           <small class="field-note">לשינוי שם המשתמש השתמש בכפתור "שינוי שם משתמש" שבשורת המשתמש.</small>
         </label>
         `}
@@ -437,20 +443,15 @@ function readUserForm(body, { requirePassword }) {
     throw new Error("אחמ\"ש רשאי לנהל משתמשי קב\"ט בלבד");
   }
 
-  let email = "";
   let username = "";
   if (requirePassword) {
     const usernameField = body.querySelector("#u_username");
     username = usernameField ? usernameField.value.trim() : "";
-    validateUsername(username);
-    email = usernameToEmailLocal(username) + USERNAME_DOMAIN;
     if (!password) throw new Error("יש למלא סיסמה");
-  } else {
-    const emailField = body.querySelector("#u_email");
-    email = emailField ? emailField.value.trim() : "";
+    if (password.length < 6) throw new Error("הסיסמה חייבת להכיל לפחות 6 תווים");
   }
 
-  return { name, employeeNumber, email, username, role, isAdmin, password };
+  return { name, employeeNumber, username, role, isAdmin, password };
 }
 
 function passwordFieldHtml({ id, label, value = "", required = false, note = "" }) {
@@ -486,15 +487,14 @@ function validateUsername(username, excludeUid = null) {
   if ([...username].length < USERNAME_MIN_LENGTH) {
     throw new Error(`שם המשתמש חייב להכיל לפחות ${USERNAME_MIN_LENGTH} תווים`);
   }
-  const emailToCheck = usernameToEmailLocal(username) + USERNAME_DOMAIN;
-  if (allUsers.some((u) => u.uid !== excludeUid && u.email?.toLowerCase() === emailToCheck)) {
-    throw new Error("שם המשתמש כבר תפוס");
-  }
-}
-
-function callableErrorMessage(error, fallback) {
-  const message = String(error?.message || "").replace(/^FirebaseError:\s*/i, "").trim();
-  return message || fallback;
+  const usernameLower = username.toLowerCase();
+  const legacyEmail = usernameToEmailLocal(username) + USERNAME_DOMAIN;
+  const taken = allUsers.some((u) => {
+    if (u.uid === excludeUid) return false;
+    if (u.usernameLower && u.usernameLower === usernameLower) return true;
+    return u.email?.toLowerCase() === legacyEmail;
+  });
+  if (taken) throw new Error("שם המשתמש כבר תפוס");
 }
 
 async function onToggleAdmin(u) {
@@ -533,7 +533,7 @@ async function onToggleAdmin(u) {
         ? `${actorLabel()} נתן הרשאת מנהל ל-${u.name || u.email}`
         : `${actorLabel()} הסיר הרשאת מנהל מ-${u.name || u.email}`,
       detailLines: [
-        `אימייל: ${u.email || "לא ידוע"}`,
+        `שם משתמש: ${usernameOf(u)}`,
         `תפקיד נוכחי: ${u.role === "ahmash" ? 'אחמ"ש' : 'קב"ט'}`
       ]
     });
@@ -560,56 +560,22 @@ async function onDelete(u) {
   });
   if ((confirmText || "").trim() !== "מחק") { toast("הפעולה בוטלה", "error"); return; }
   try {
-    await deleteUserCompletelyCall({ targetUid: u.uid });
+    await deleteDocument(COLLECTION, u.uid);
     await logActivity({
       action: "user.delete",
       entityType: "user",
       entityId: u.uid,
       summary: `${actorLabel()} מחק את המשתמש ${u.name || u.email}`,
       detailLines: [
-        `אימייל: ${u.email || "לא ידוע"}`,
+        `שם משתמש: ${usernameOf(u)}`,
         `מספר עובד: ${u.employeeNumber || "לא הוזן"}`
       ]
     });
-    toast("המשתמש נמחק לגמרי מ-Firebase", "success", 4000);
-  } catch (e) { toast(callableErrorMessage(e, "שגיאה במחיקת המשתמש"), "error"); }
+    toast("המשתמש נמחק", "success", 4000);
+  } catch (e) { toast(e.message || "שגיאה במחיקת המשתמש", "error"); }
 }
 
-// Changing an existing account's password/username by recreating it: build a new
-// Firebase Auth user that keeps the same profile (name, employee number, role,
-// admin status) plus the requested change, then delete the old account. Firebase
-// never exposes the existing password, so a username change requires typing one.
-async function recreateUserPreserving(oldUser, { newEmail, newUsername, password }) {
-  const preserved = {
-    name: oldUser.name || "",
-    employeeNumber: oldUser.employeeNumber || "",
-    role: oldUser.role || "kabat",
-    isAdmin: !!oldUser.isAdmin,
-    email: newEmail,
-    username: newUsername,
-    createdAt: oldUser.createdAt || new Date().toISOString(),
-    createdBy: oldUser.createdBy || currentUser.uid || null
-  };
-  const emailChanged = newEmail.toLowerCase() !== String(oldUser.email || "").toLowerCase();
-
-  if (emailChanged) {
-    // New email is free — create the new account first (safe), then remove the old.
-    const cred = await createUserWithEmailAndPassword(secondaryAuth, newEmail, password);
-    try { await secondarySignOut(secondaryAuth); } catch (_) { }
-    await createDocument(COLLECTION, preserved, cred.user.uid);
-    await deleteUserCompletelyCall({ targetUid: oldUser.uid });
-    return cred.user.uid;
-  }
-
-  // Same email (password change) — must delete the old account first to free the email.
-  await deleteUserCompletelyCall({ targetUid: oldUser.uid });
-  const cred = await createUserWithEmailAndPassword(secondaryAuth, newEmail, password);
-  try { await secondarySignOut(secondaryAuth); } catch (_) { }
-  await createDocument(COLLECTION, preserved, cred.user.uid);
-  return cred.user.uid;
-}
-
-function assertCanRecreate(user) {
+function assertCanManage(user) {
   if (isSuperAdminEmail(user.email)) throw new Error("לא ניתן לשנות את מנהל העל");
   if (user.uid === currentUser.uid) throw new Error("לא ניתן לשנות סיסמה או שם משתמש לעצמך בדרך זו");
   if (!canManageTarget(user)) throw new Error("אין לך הרשאה לנהל משתמש זה");
@@ -622,7 +588,7 @@ function assertPasswordOk(password, confirmPassword) {
 }
 
 function openSetPasswordModal(user) {
-  const username = user.username || usernameFromEmail(user.email);
+  const username = usernameOf(user);
   const modal = openModal({
     title: `שינוי סיסמה: ${user.name || username}`,
     large: true,
@@ -630,7 +596,7 @@ function openSetPasswordModal(user) {
       <form class="user-form">
         <div class="modal-note">
           <strong>שינוי סיסמה למשתמש</strong>
-          <span>המשתמש ייווצר מחדש עם אותם פרטים בדיוק (שם, מספר עובד, תפקיד, הרשאות ושם משתמש) — רק הסיסמה תשתנה.</span>
+          <span>שאר הפרטים (שם, מספר עובד, תפקיד, הרשאות ושם משתמש) נשארים ללא שינוי — רק הסיסמה תתעדכן.</span>
         </div>
         <div class="form-grid compact-grid">
           ${passwordFieldHtml({ id: "set_pwd", label: "סיסמה חדשה", required: true, note: PASSWORD_RULE_TEXT })}
@@ -648,14 +614,17 @@ function openSetPasswordModal(user) {
           button.disabled = true;
           button.innerHTML = `<span class="spinner"></span> שומר...`;
           try {
-            assertCanRecreate(user);
+            assertCanManage(user);
             const password = body.querySelector("#set_pwd").value;
             const confirmPassword = body.querySelector("#set_pwd_confirm").value;
             assertPasswordOk(password, confirmPassword);
-            await recreateUserPreserving(user, {
-              newEmail: user.email,
-              newUsername: username,
-              password
+            const salt = generateSalt();
+            const passwordHash = await hashPassword(salt, password);
+            await updateDocument(COLLECTION, user.uid, {
+              passwordHash,
+              passwordSalt: salt,
+              passwordUpdatedAt: new Date().toISOString(),
+              passwordUpdatedBy: currentUser.uid
             });
             await logActivity({
               action: "user.set_password",
@@ -667,7 +636,7 @@ function openSetPasswordModal(user) {
             toast("הסיסמה עודכנה בהצלחה", "success", 4000);
             close();
           } catch (e) {
-            toast(callableErrorMessage(e, "שגיאה בעדכון הסיסמה"), "error");
+            toast(e.message || "שגיאה בעדכון הסיסמה", "error");
             button.disabled = false;
             button.textContent = "שמור סיסמה";
           }
@@ -680,7 +649,7 @@ function openSetPasswordModal(user) {
 }
 
 function openSetUsernameModal(user) {
-  const currentUsername = user.username || usernameFromEmail(user.email);
+  const currentUsername = usernameOf(user);
   const modal = openModal({
     title: `שינוי שם משתמש: ${user.name || currentUsername}`,
     large: true,
@@ -688,7 +657,7 @@ function openSetUsernameModal(user) {
       <form class="user-form">
         <div class="modal-note">
           <strong>שינוי שם המשתמש (כניסה)</strong>
-          <span>המשתמש ייווצר מחדש עם אותם פרטים (שם, מספר עובד, תפקיד, הרשאות). מכיוון שאי אפשר לשחזר את הסיסמה הקיימת מ-Firebase, יש להזין סיסמה חדשה עבור החשבון.</span>
+          <span>שאר הפרטים (שם, מספר עובד, תפקיד, הרשאות והסיסמה) נשארים ללא שינוי.</span>
         </div>
         <div class="form-grid">
           <label class="field full"><span>שם משתמש נוכחי</span>
@@ -698,8 +667,6 @@ function openSetUsernameModal(user) {
             <input type="text" id="new_username" autocomplete="off" placeholder="לדוגמה: david123 / 22000 / דוד" />
             <small class="field-note">לפחות 5 תווים — אותיות (אנגלית או עברית) או מספרים, ללא רווחים.</small>
           </label>
-          ${passwordFieldHtml({ id: "uname_pwd", label: "סיסמה לחשבון", required: true, note: PASSWORD_RULE_TEXT })}
-          ${passwordFieldHtml({ id: "uname_pwd_confirm", label: "אימות סיסמה", required: true })}
         </div>
       </form>`,
     footerButtons: [
@@ -713,14 +680,15 @@ function openSetUsernameModal(user) {
           button.disabled = true;
           button.innerHTML = `<span class="spinner"></span> שומר...`;
           try {
-            assertCanRecreate(user);
+            assertCanManage(user);
             const newUsername = body.querySelector("#new_username").value.trim();
             validateUsername(newUsername, user.uid);
-            const password = body.querySelector("#uname_pwd").value;
-            const confirmPassword = body.querySelector("#uname_pwd_confirm").value;
-            assertPasswordOk(password, confirmPassword);
-            const newEmail = usernameToEmailLocal(newUsername) + USERNAME_DOMAIN;
-            await recreateUserPreserving(user, { newEmail, newUsername, password });
+            await updateDocument(COLLECTION, user.uid, {
+              username: newUsername,
+              usernameLower: newUsername.toLowerCase(),
+              usernameUpdatedAt: new Date().toISOString(),
+              usernameUpdatedBy: currentUser.uid
+            });
             await logActivity({
               action: "user.set_username",
               entityType: "user",
@@ -731,9 +699,86 @@ function openSetUsernameModal(user) {
             toast("שם המשתמש עודכן בהצלחה", "success", 4000);
             close();
           } catch (e) {
-            toast(callableErrorMessage(e, "שגיאה בעדכון שם המשתמש"), "error");
+            toast(e.message || "שגיאה בעדכון שם המשתמש", "error");
             button.disabled = false;
             button.textContent = "שמור שם משתמש";
+          }
+        }
+      }
+    ]
+  });
+
+  wirePasswordToggles(modal.body);
+}
+
+// Migration for legacy (pre-Firestore) users: same doc id, just adds
+// username/usernameLower/passwordHash/passwordSalt so Firestore login works.
+// Their old Firebase Auth account (if any) is left untouched but is no longer
+// reachable via the login form for non-super-admin accounts.
+function openMigrateUserModal(user) {
+  const currentUsername = usernameOf(user);
+  const modal = openModal({
+    title: `החלף למשתמש פיירסטור: ${user.name || currentUsername}`,
+    large: true,
+    bodyHtml: `
+      <form class="user-form">
+        <div class="modal-note">
+          <strong>העברת המשתמש לכניסה דרך פיירסטור</strong>
+          <span>הפרטים הקיימים (שם, מספר עובד, תפקיד והרשאות) נשארים בדיוק כפי שהם. יש לבחור שם משתמש וסיסמה לכניסה — לא ניתן לשחזר את הסיסמה הישנה.</span>
+        </div>
+        <div class="form-grid">
+          <label class="field full"><span>שם משתמש נוכחי</span>
+            <input type="text" value="${escapeHtml(currentUsername)}" disabled />
+          </label>
+          <label class="field full"><span>שם משתמש</span>
+            <input type="text" id="mig_username" autocomplete="off" value="${escapeHtml(currentUsername)}" placeholder="לדוגמה: david123 / 22000 / דוד" />
+            <small class="field-note">לפחות 5 תווים — אותיות (אנגלית או עברית) או מספרים, ללא רווחים.</small>
+          </label>
+          ${passwordFieldHtml({ id: "mig_pwd", label: "סיסמה חדשה", required: true, note: PASSWORD_RULE_TEXT })}
+          ${passwordFieldHtml({ id: "mig_pwd_confirm", label: "אימות סיסמה חדשה", required: true })}
+        </div>
+      </form>`,
+    footerButtons: [
+      { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
+      {
+        label: "העבר לפיירסטור",
+        className: "btn-success",
+        id: "migrateUserBtn",
+        onClick: async ({ body, close }) => {
+          const button = document.getElementById("migrateUserBtn");
+          button.disabled = true;
+          button.innerHTML = `<span class="spinner"></span> מעביר...`;
+          try {
+            assertCanManage(user);
+            const newUsername = body.querySelector("#mig_username").value.trim();
+            validateUsername(newUsername, user.uid);
+            const password = body.querySelector("#mig_pwd").value;
+            const confirmPassword = body.querySelector("#mig_pwd_confirm").value;
+            assertPasswordOk(password, confirmPassword);
+            const salt = generateSalt();
+            const passwordHash = await hashPassword(salt, password);
+            await updateDocument(COLLECTION, user.uid, {
+              username: newUsername,
+              usernameLower: newUsername.toLowerCase(),
+              passwordHash,
+              passwordSalt: salt,
+              firestoreAuth: true,
+              migratedAt: new Date().toISOString(),
+              migratedBy: currentUser.uid
+            });
+            await logActivity({
+              action: "user.migrate_to_firestore",
+              entityType: "user",
+              entityId: user.uid,
+              summary: `${actorLabel()} העביר את ${user.name || user.email} לכניסה דרך פיירסטור`,
+              detailLines: [`שם משתמש: ${newUsername}`]
+            });
+            toast("המשתמש הועבר לכניסה דרך פיירסטור בהצלחה", "success", 4000);
+            close();
+          } catch (e) {
+            toast(e.message || "שגיאה בהעברת המשתמש", "error");
+            button.disabled = false;
+            button.textContent = "העבר לפיירסטור";
           }
         }
       }

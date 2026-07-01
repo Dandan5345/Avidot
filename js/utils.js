@@ -40,6 +40,28 @@ export function usernameFromEmail(email) {
   return local;
 }
 
+// ===== Password hashing (Firestore-based login, no Firebase Auth) =====
+// Not a substitute for a proper server-side auth system: the hash lives in a
+// Firestore doc readable by any signed-in (incl. anonymous) session. Chosen
+// deliberately to avoid the Blaze plan (Cloud Functions/Admin SDK) — see
+// project memory "firestore-auth-migration-plan".
+export function generateSalt(length = 16) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function hashPassword(salt, password) {
+  const data = new TextEncoder().encode(String(salt) + String(password));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function verifyPassword(salt, hash, password) {
+  const computed = await hashPassword(salt, password);
+  return computed === hash;
+}
+
 export function escapeHtml(value) {
   if (value === null || value === undefined) return "";
   return String(value)
