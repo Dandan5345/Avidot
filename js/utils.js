@@ -1,5 +1,22 @@
 // General utilities: HTML escaping, formatting, modal & toast helpers.
 
+// Converts a username to the local part of the login email (before @aovdim.com).
+// English/numeric usernames are kept as-is (lowercased) for backward compatibility.
+// Non-ASCII usernames (e.g. Hebrew) are encoded to a deterministic ASCII form,
+// because Firebase Auth rejects email addresses with non-ASCII characters.
+// The same input always produces the same output, so login and user creation match.
+export function usernameToEmailLocal(rawUsername) {
+  const username = String(rawUsername || "").trim().toLowerCase();
+  if (!username) return "";
+  // Already a valid ASCII email local part → use as-is.
+  if (/^[a-z0-9._-]+$/.test(username)) return username;
+  // Otherwise encode the UTF-8 bytes as hex (ASCII-safe, reversible, collision-free).
+  const bytes = new TextEncoder().encode(username);
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  return "u" + hex;
+}
+
 export function escapeHtml(value) {
   if (value === null || value === undefined) return "";
   return String(value)

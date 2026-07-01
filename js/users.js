@@ -15,7 +15,7 @@ import {
 } from "./firestoreStore.js";
 import { isAdmin, currentUser } from "./auth.js";
 import {
-  escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime
+  escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime, usernameToEmailLocal
 } from "./utils.js";
 import { logActivity } from "./activityLog.js";
 
@@ -23,7 +23,9 @@ const COLLECTION = "users";
 const PASSWORD_RULE = /^.{5,}$/;
 const PASSWORD_RULE_TEXT = 'הסיסמה חייבת להכיל לפחות 5 תווים (מספרים בלבד זה בסדר, לדוגמה 22000)';
 const USERNAME_DOMAIN = "@aovdim.com";
-const USERNAME_RULE = /^[a-zA-Z][a-zA-Z0-9._-]{4,}$/;
+// שם המשתמש חייב להכיל לפחות 5 תווים ולא יכול להכיל רווחים.
+// מותר: אנגלית, מספרים בלבד, ועברית.
+const USERNAME_MIN_LENGTH = 5;
 const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
 const setUserPasswordCall = httpsCallable(functionsClient, "setUserPassword");
 
@@ -303,8 +305,8 @@ function userFormHtml({ user = null, requirePassword }) {
           <input type="text" id="u_emp" value="${escapeHtml(user?.employeeNumber || "")}" /></label>
         ${!user ? `
         <label class="field full"><span>שם משתמש</span>
-          <input type="text" id="u_username" required autocomplete="off" placeholder="לדוגמה: david123" />
-          <small class="field-note">אנגלית בלבד, לפחות 5 תווים, ללא רווחים. כתובת המייל תהיה שם_משתמש@aovdim.com</small>
+          <input type="text" id="u_username" required autocomplete="off" placeholder="לדוגמה: david123 / 22000 / דוד" />
+          <small class="field-note">אנגלית, מספרים בלבד או עברית — לפחות 5 תווים, ללא רווחים.</small>
         </label>
         ` : `
         <label class="field full"><span>אימייל</span>
@@ -346,7 +348,7 @@ function readUserForm(body, { requirePassword }) {
     const usernameField = body.querySelector("#u_username");
     const username = usernameField ? usernameField.value.trim() : "";
     validateUsername(username);
-    email = username.toLowerCase() + USERNAME_DOMAIN;
+    email = usernameToEmailLocal(username) + USERNAME_DOMAIN;
     if (!password) throw new Error("יש למלא סיסמה");
     assertStrongPassword(password);
   } else {
@@ -389,8 +391,14 @@ function assertStrongPassword(password) {
 function validateUsername(username) {
   if (!username) throw new Error("יש למלא שם משתמש");
   if (/\s/.test(username)) throw new Error("שם המשתמש לא יכול להכיל רווחים");
-  if (!USERNAME_RULE.test(username)) throw new Error("שם המשתמש חייב להתחיל באות אנגלית, להכיל לפחות 5 תווים ולהיות ללא רווחים");
-  const emailToCheck = username.toLowerCase() + USERNAME_DOMAIN;
+  // מותר: אותיות אנגלית, מספרים, אותיות עברית והתווים . _ -
+  if (!/^[a-zA-Z0-9._\-֐-׿]+$/.test(username)) {
+    throw new Error("שם המשתמש יכול להכיל אנגלית, מספרים או עברית בלבד (ללא רווחים)");
+  }
+  if ([...username].length < USERNAME_MIN_LENGTH) {
+    throw new Error(`שם המשתמש חייב להכיל לפחות ${USERNAME_MIN_LENGTH} תווים`);
+  }
+  const emailToCheck = usernameToEmailLocal(username) + USERNAME_DOMAIN;
   if (allUsers.some((u) => u.email?.toLowerCase() === emailToCheck)) {
     throw new Error("שם המשתמש כבר תפוס");
   }
