@@ -27,24 +27,47 @@ function assertStrongPassword(password) {
     }
 }
 
-async function requireAdmin(request) {
+async function resolveCaller(request) {
     if (!request.auth) {
         throw new HttpsError("unauthenticated", "יש להתחבר כדי לבצע את הפעולה");
     }
 
+    const email = normalizedString(request.auth.token.email);
     const caller = {
         uid: request.auth.uid,
-        email: normalizedString(request.auth.token.email),
-        isSuperAdmin: isSuperAdminEmail(request.auth.token.email)
+        email,
+        isSuperAdmin: isSuperAdminEmail(email),
+        isAdmin: false,
+        role: "kabat"
     };
 
-    if (caller.isSuperAdmin) return caller;
-
-    const snap = await db.collection("users").doc(caller.uid).get();
-    if (!snap.exists || !snap.data()?.isAdmin) {
-        throw new HttpsError("permission-denied", "רק מנהלים רשאים לבצע את הפעולה");
+    if (caller.isSuperAdmin) {
+        caller.isAdmin = true;
+        caller.role = "ahmash";
+        return caller;
     }
 
+    const snap = await db.collection("users").doc(caller.uid).get();
+    const data = snap.exists ? snap.data() : null;
+    caller.isAdmin = !!data?.isAdmin;
+    caller.role = data?.role || "kabat";
+    return caller;
+}
+
+async function requireAdmin(request) {
+    const caller = await resolveCaller(request);
+    if (!caller.isAdmin) {
+        throw new HttpsError("permission-denied", "רק מנהלים רשאים לבצע את הפעולה");
+    }
+    return caller;
+}
+
+// Admins manage everyone; ahmash (non-admin) may manage only kabat users.
+async function requireUserManager(request) {
+    const caller = await resolveCaller(request);
+    if (!caller.isAdmin && caller.role !== "ahmash") {
+        throw new HttpsError("permission-denied", "אין לך הרשאה לנהל משתמשים");
+    }
     return caller;
 }
 
@@ -83,6 +106,14 @@ async function assertManageableTarget(actor, target, { allowSelfDelete = false }
 
     if (!allowSelfDelete && actor.uid === target.uid) {
         throw new HttpsError("permission-denied", "לא ניתן למחוק את המשתמש המחובר כרגע");
+    }
+
+    // Ahmash (non-admin) may only manage kabat, non-admin users.
+    if (!actor.isAdmin && actor.role === "ahmash") {
+        const targetRole = target.profile?.role || "kabat";
+        if (targetRole !== "kabat" || target.profile?.isAdmin) {
+            throw new HttpsError("permission-denied", 'אחמ"ש רשאי לנהל משתמשי קב"ט בלבד');
+        }
     }
 
     if (target.profile?.isAdmin && !actor.isSuperAdmin) {
@@ -155,7 +186,7 @@ exports.setUserPassword = onCall(async (request) => {
 });
 
 exports.deleteUserCompletely = onCall(async (request) => {
-    const actor = await requireAdmin(request);
+    const actor = await requireUserManager(request);
     const targetUid = normalizedString(request.data?.targetUid);
 
     if (!targetUid) {

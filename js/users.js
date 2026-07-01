@@ -13,9 +13,9 @@ import {
   subscribeCollection,
   updateDocument
 } from "./firestoreStore.js";
-import { isAdmin, currentUser } from "./auth.js";
+import { isAdmin, isAhmash, currentUser } from "./auth.js";
 import {
-  escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime, usernameToEmailLocal
+  escapeHtml, openModal, toast, confirmDialog, promptDialog, formatDateTime, usernameToEmailLocal, usernameFromEmail
 } from "./utils.js";
 import { logActivity } from "./activityLog.js";
 
@@ -26,19 +26,35 @@ const USERNAME_DOMAIN = "@aovdim.com";
 // מותר: אנגלית, מספרים בלבד, ועברית.
 const USERNAME_MIN_LENGTH = 5;
 const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
-const setUserPasswordCall = httpsCallable(functionsClient, "setUserPassword");
 
 let unsubscribe = null;
 let allUsers = [];
+
+// Permissions:
+// - Admins / super-admin manage all users.
+// - Ahmash (role "ahmash" without admin) can add/remove/manage ONLY kabat users.
+function isRestrictedAhmash() {
+  return !isAdmin() && currentUser.role === "ahmash";
+}
+function canManageUsersPage() {
+  return isAhmash(); // admin OR ahmash
+}
+// Whether the current user may act on a specific target user.
+function canManageTarget(target) {
+  if (!target || isSuperAdminEmail(target.email)) return false;
+  if (isAdmin()) return true;
+  if (isRestrictedAhmash()) return target.role === "kabat" && !target.isAdmin;
+  return false;
+}
 let hasLoadedSnapshot = false;
 let loadError = "";
 let initialLoadTimer = null;
 
 export function renderUsers(container) {
-  if (!isAdmin()) {
+  if (!canManageUsersPage()) {
     container.innerHTML = `
       <div class="page-title"><h2>ניהול משתמשים</h2></div>
-      <div class="section-card"><p>אין לך הרשאת מנהל לדף זה.</p></div>`;
+      <div class="section-card"><p>אין לך הרשאה לדף זה.</p></div>`;
     return;
   }
 
@@ -46,9 +62,14 @@ export function renderUsers(container) {
     <div class="page-title">
       <h2>👥 ניהול משתמשים</h2>
       <div class="home-actions">
-        <button id="openLogBtn" class="btn btn-outline">📜 log</button>
+        ${isAdmin() ? `<button id="openLogBtn" class="btn btn-outline">📜 log</button>` : ""}
         <button id="addUserBtn" class="btn">➕ הוסף משתמש</button>
       </div>
+    </div>
+
+    <div class="modal-note" style="margin-bottom:14px">
+      <strong>שים לב</strong>
+      <span>לא ניתן לאפס סיסמה או לשנות שם משתמש למשתמש קיים. כדי לאפס סיסמה או להחליף שם משתמש — יש למחוק את המשתמש וליצור אותו מחדש.</span>
     </div>
 
     <div class="table-wrap">
@@ -64,12 +85,13 @@ export function renderUsers(container) {
     </div>
     <p class="muted" style="margin-top:10px">
       הערה: סיסמאות נשמרות באופן מאובטח על ידי Firebase Authentication ואינן מוצגות כאן.
-      מנהל יכול לקבוע סיסמה חדשה ישירות מהמערכת וגם למחוק משתמש לגמרי מ-Firebase.
+      מחיקת משתמש מוחקת אותו לגמרי גם מ-Firebase Authentication.
     </p>
   `;
 
   container.querySelector("#addUserBtn").addEventListener("click", () => openAddUserModal());
-  container.querySelector("#openLogBtn").addEventListener("click", () => { location.hash = "#/activity-log"; });
+  const logBtn = container.querySelector("#openLogBtn");
+  if (logBtn) logBtn.addEventListener("click", () => { location.hash = "#/activity-log"; });
 
   loadError = "";
   clearTimeout(initialLoadTimer);
@@ -113,7 +135,11 @@ function renderTable(tbody) {
     return;
   }
 
-  const visibleUsers = allUsers.filter((u) => !isSuperAdminEmail(u.email));
+  let visibleUsers = allUsers.filter((u) => !isSuperAdminEmail(u.email));
+  // Ahmash (non-admin) only sees the kabat users they are allowed to manage.
+  if (isRestrictedAhmash()) {
+    visibleUsers = visibleUsers.filter((u) => u.role === "kabat" && !u.isAdmin);
+  }
 
   if (!visibleUsers.length) {
     tbody.innerHTML = `<tr><td colspan="7" class="empty">אין משתמשים</td></tr>`;
@@ -141,10 +167,9 @@ function renderTable(tbody) {
         </td>
         <td>${escapeHtml(u.createdAt ? formatDateTime(u.createdAt) : "")}</td>
         <td>
-          ${superAdmin ? '<span class="muted">מוגן</span>' : `
+          ${superAdmin || !canManageTarget(u) ? '<span class="muted">מוגן</span>' : `
             <button class="btn btn-sm" data-action="edit">ערוך</button>
-            <button class="btn btn-sm btn-outline" data-action="toggleAdmin">${u.isAdmin ? "הורד הרשאת מנהל" : "הפוך למנהל"}</button>
-            <button class="btn btn-sm btn-secondary" data-action="setPassword">קבע סיסמה</button>
+            ${isAdmin() ? `<button class="btn btn-sm btn-outline" data-action="toggleAdmin">${u.isAdmin ? "הורד הרשאת מנהל" : "הפוך למנהל"}</button>` : ""}
             <button class="btn btn-sm btn-danger" data-action="delete">מחק</button>
           `}
         </td>
@@ -158,10 +183,15 @@ function renderTable(tbody) {
         e.stopPropagation();
         const u = allUsers.find((x) => x.uid === uid);
         if (!u) return;
-        if (btn.dataset.action === "edit") openEditUserModal(u);
-        if (btn.dataset.action === "toggleAdmin") onToggleAdmin(u);
-        if (btn.dataset.action === "delete") onDelete(u);
-        if (btn.dataset.action === "setPassword") openSetPasswordModal(u);
+        const action = btn.dataset.action;
+        if (action === "toggleAdmin") {
+          if (!isAdmin()) { toast("אין לך הרשאה לפעולה זו", "error"); return; }
+          onToggleAdmin(u);
+          return;
+        }
+        if (!canManageTarget(u)) { toast("אין לך הרשאה לנהל משתמש זה", "error"); return; }
+        if (action === "edit") openEditUserModal(u);
+        if (action === "delete") onDelete(u);
       });
     });
   });
@@ -185,6 +215,7 @@ function openAddUserModal() {
           name: form.name,
           employeeNumber: form.employeeNumber,
           email: form.email,
+          username: form.username,
           role: form.role,
           isAdmin: form.isAdmin || isSuperAdminEmail(form.email),
           createdAt: new Date().toISOString(),
@@ -308,9 +339,10 @@ function userFormHtml({ user = null, requirePassword }) {
           <small class="field-note">לפחות 5 תווים — אותיות (אנגלית או עברית) או מספרים, ללא רווחים.</small>
         </label>
         ` : `
-        <label class="field full"><span>אימייל</span>
-          <input type="email" id="u_email" value="${escapeHtml(user?.email || "")}" disabled />
-          <small class="field-note">שינוי אימייל דורש עדכון גם ב-Firebase Authentication ולכן חסום כאן.</small>
+        <label class="field full"><span>שם משתמש</span>
+          <input type="text" value="${escapeHtml(user?.username || usernameFromEmail(user?.email))}" disabled />
+          <input type="hidden" id="u_email" value="${escapeHtml(user?.email || "")}" />
+          <small class="field-note">לא ניתן לשנות שם משתמש. כדי להחליף שם משתמש יש למחוק את המשתמש וליצור אותו מחדש.</small>
         </label>
         `}
         ${requirePassword ? `
@@ -320,6 +352,12 @@ function userFormHtml({ user = null, requirePassword }) {
     required: true,
     note: PASSWORD_RULE_TEXT
   })}` : ""}
+        ${isRestrictedAhmash() ? `
+        <label class="field"><span>תפקיד</span>
+          <input type="text" value='קב"ט' disabled />
+          <small class="field-note">אחמ"ש יכול להוסיף ולנהל משתמשי קב"ט בלבד.</small>
+        </label>
+        ` : `
         <label class="field"><span>תפקיד</span>
           <select id="u_role">
             <option value="kabat" ${user?.role === "kabat" ? "selected" : ""}>קב"ט</option>
@@ -328,6 +366,7 @@ function userFormHtml({ user = null, requirePassword }) {
         <label class="checkbox-row">
           <input type="checkbox" id="u_admin" ${user?.isAdmin ? "checked" : ""} />
           <span>סטטוס מנהל</span></label>
+        `}
       </div>
     </form>`;
 }
@@ -335,17 +374,25 @@ function userFormHtml({ user = null, requirePassword }) {
 function readUserForm(body, { requirePassword }) {
   const name = body.querySelector("#u_name").value.trim();
   const employeeNumber = body.querySelector("#u_emp").value.trim();
-  const role = body.querySelector("#u_role").value;
-  const isAdmin = body.querySelector("#u_admin").checked;
+  const roleField = body.querySelector("#u_role");
+  const adminField = body.querySelector("#u_admin");
+  // Restricted ahmash has no role/admin controls — force kabat, non-admin.
+  const restricted = isRestrictedAhmash();
+  const role = restricted ? "kabat" : (roleField ? roleField.value : "kabat");
+  const isAdmin = restricted ? false : (adminField ? adminField.checked : false);
   const password = requirePassword ? body.querySelector("#u_pwd").value : "";
 
   if (!name) throw new Error("יש למלא שם עובד");
   if (!role) throw new Error("יש לבחור תפקיד");
+  if (restricted && (role !== "kabat" || isAdmin)) {
+    throw new Error("אחמ\"ש רשאי לנהל משתמשי קב\"ט בלבד");
+  }
 
   let email = "";
+  let username = "";
   if (requirePassword) {
     const usernameField = body.querySelector("#u_username");
-    const username = usernameField ? usernameField.value.trim() : "";
+    username = usernameField ? usernameField.value.trim() : "";
     validateUsername(username);
     email = usernameToEmailLocal(username) + USERNAME_DOMAIN;
     if (!password) throw new Error("יש למלא סיסמה");
@@ -354,7 +401,7 @@ function readUserForm(body, { requirePassword }) {
     email = emailField ? emailField.value.trim() : "";
   }
 
-  return { name, employeeNumber, email, role, isAdmin, password };
+  return { name, employeeNumber, email, username, role, isAdmin, password };
 }
 
 function passwordFieldHtml({ id, label, value = "", required = false, note = "" }) {
@@ -477,59 +524,6 @@ async function onDelete(u) {
     });
     toast("המשתמש נמחק לגמרי מ-Firebase", "success", 4000);
   } catch (e) { toast(callableErrorMessage(e, "שגיאה במחיקת המשתמש"), "error"); }
-}
-
-function openSetPasswordModal(user) {
-  const modal = openModal({
-    title: `קביעת סיסמה: ${user.name || user.email}`,
-    large: true,
-    bodyHtml: `
-      <form class="user-form">
-        <div class="modal-note">
-          <strong>קביעת סיסמה ידנית על ידי מנהל</strong>
-          <span>הסיסמה החדשה תעודכן ישירות ב-Firebase Authentication בלי שליחת מייל למשתמש.</span>
-        </div>
-        <div class="form-grid compact-grid">
-          ${passwordFieldHtml({ id: "set_pwd", label: "סיסמה חדשה", required: true, note: PASSWORD_RULE_TEXT })}
-          ${passwordFieldHtml({ id: "set_pwd_confirm", label: "אימות סיסמה חדשה", required: true })}
-        </div>
-      </form>`,
-    footerButtons: [
-      { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
-      {
-        label: "שמור סיסמה",
-        className: "btn-success",
-        id: "savePasswordBtn",
-        onClick: async ({ body, close }) => {
-          const button = document.getElementById("savePasswordBtn");
-          button.disabled = true;
-          button.innerHTML = `<span class="spinner"></span> שומר...`;
-          try {
-            const password = body.querySelector("#set_pwd").value;
-            const confirmPassword = body.querySelector("#set_pwd_confirm").value;
-            if (!password || !confirmPassword) throw new Error("יש למלא את שני שדות הסיסמה");
-            if (password !== confirmPassword) throw new Error("אימות הסיסמה לא תואם");
-            await setUserPasswordCall({ targetUid: user.uid, newPassword: password });
-            await logActivity({
-              action: "user.set_password",
-              entityType: "user",
-              entityId: user.uid,
-              summary: `${actorLabel()} קבע סיסמה חדשה עבור ${user.name || user.email}`,
-              detailLines: [`אימייל: ${user.email || "לא ידוע"}`]
-            });
-            toast("הסיסמה עודכנה בהצלחה", "success");
-            close();
-          } catch (e) {
-            toast(callableErrorMessage(e, "שגיאה בעדכון הסיסמה"), "error");
-            button.disabled = false;
-            button.textContent = "שמור סיסמה";
-          }
-        }
-      }
-    ]
-  });
-
-  wirePasswordToggles(modal.body);
 }
 
 // Helper: ensures the super admin has a /users record (auto-created at login).

@@ -17,6 +17,29 @@ export function usernameToEmailLocal(rawUsername) {
   return "u" + hex;
 }
 
+// Reverse of usernameToEmailLocal: recover the readable username from a login email.
+// Used for display only (e.g. showing the username in the edit dialog).
+export function usernameFromEmail(email) {
+  const local = String(email || "").split("@")[0];
+  if (!local) return "";
+  // Encoded non-ASCII form is "u" followed by an even number of hex digits.
+  if (local.length > 2 && /^u([0-9a-f]{2})+$/.test(local)) {
+    try {
+      const hex = local.slice(1);
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      }
+      const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      // Only treat it as encoded if it actually decodes to non-ASCII (e.g. Hebrew).
+      if (/[^\x00-\x7F]/.test(decoded)) return decoded;
+    } catch (_) {
+      // Not an encoded username — fall through and show the local part as-is.
+    }
+  }
+  return local;
+}
+
 export function escapeHtml(value) {
   if (value === null || value === undefined) return "";
   return String(value)

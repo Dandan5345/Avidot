@@ -79,7 +79,7 @@ function navigate() {
   const rawRoute = currentRoute() || "/home";
 
   // Permission gates
-  if (rawRoute === "/users" && !isAdmin()) { location.hash = "#/home"; return; }
+  if (rawRoute === "/users" && !isAhmash()) { location.hash = "#/home"; return; }
   if (rawRoute === "/activity-log" && !isAdmin()) { location.hash = "#/home"; return; }
   if (rawRoute === "/manager-actions" && !isAhmash()) { location.hash = "#/home"; return; }
 

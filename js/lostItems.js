@@ -354,17 +354,26 @@ async function openAddModal({ prefill = null } = {}) {
     try {
       const number = Number(body.querySelector("#f_number").value);
       if (!Number.isFinite(number) || number <= 0) throw new Error("מספר אבידה לא תקין");
-      const dateTime = toIsoFromLocalInput(body.querySelector("#f_dateTime").value) || new Date().toISOString();
+      const dateTimeRaw = body.querySelector("#f_dateTime").value;
+      if (!dateTimeRaw) throw new Error("יש למלא תאריך ושעה");
+      const dateTime = toIsoFromLocalInput(dateTimeRaw) || new Date().toISOString();
       const description = body.querySelector("#f_description").value.trim();
-      if (!description) throw new Error("תיאור פריט חסר");
+      if (!description) throw new Error("יש למלא תיאור פריט");
       const valuable = body.querySelector("#f_valuable").checked;
       const foundLocation = body.querySelector("#f_foundLocation").value.trim();
+      if (!foundLocation) throw new Error("יש למלא איפה נמצא");
       const storageLocation = body.querySelector("#f_storageLocation").value;
+      if (!storageLocation) throw new Error("יש לבחור איפה מאוחסן");
       const storageOther = storageLocation === "אחר" ? body.querySelector("#f_storageOther").value.trim() : "";
       if (storageLocation === "אחר" && !storageOther) throw new Error("יש לפרט מיקום אחסון");
       const finderUnknownVal = body.querySelector("#f_finderUnknown").checked;
+      const finderNameVal = finderUnknownVal ? "" : body.querySelector("#f_finderName").value.trim();
+      const finderDeptVal = finderUnknownVal ? "" : body.querySelector("#f_finderDept").value.trim();
+      if (!finderUnknownVal && (!finderNameVal || !finderDeptVal)) {
+        throw new Error("יש למלא שם ומחלקת המוצא, או לסמן 'לא ידוע'");
+      }
       const kabatHandler = body.querySelector("#f_kabatHandler").value.trim();
-      if (!kabatHandler) throw new Error("שם הקב\"ט המטפל חסר");
+      if (!kabatHandler) throw new Error("יש למלא את שם הקב\"ט המטפל");
 
       let photoUrl = (prefill && prefill.photoUrl) || null;
       try {
@@ -380,8 +389,8 @@ async function openAddModal({ prefill = null } = {}) {
       const payload = {
         number, dateTime, description, valuable, foundLocation,
         storageLocation, storageOther,
-        finderName: finderUnknownVal ? "" : body.querySelector("#f_finderName").value.trim(),
-        finderDept: finderUnknownVal ? "" : body.querySelector("#f_finderDept").value.trim(),
+        finderName: finderNameVal,
+        finderDept: finderDeptVal,
         finderUnknown: finderUnknownVal,
         kabatHandler,
         photoUrl: photoUrl || null,

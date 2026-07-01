@@ -4,6 +4,7 @@ import { isAdmin, isAhmash, currentUser } from "./auth.js";
 export function renderHome(container) {
   const showAdmin = isAdmin();
   const showAhmash = isAhmash() || currentUser.role === "ahmash";
+  const showUsers = isAhmash(); // admin or ahmash can manage users
 
   container.innerHTML = `
     <div class="home-wrapper">
@@ -12,7 +13,7 @@ export function renderHome(container) {
           <div class="hero-content">
             <h2>ברוכים הבאים, ${escapeName(currentUser.name)}</h2>
             <p>מערכת ניהול אבידות ומציאות – ביטחון מלון ממילא</p>
-            ${showAdmin ? `<div class="hero-actions"><button id="usersBtn" class="btn btn-outline-light">👥 ניהול משתמשים</button><button id="logBtn" class="btn btn-outline-light">📜 בקרת יומן (LOG)</button></div>` : ""}
+            ${showUsers || showAdmin ? `<div class="hero-actions">${showUsers ? `<button id="usersBtn" class="btn btn-outline-light">👥 ניהול משתמשים</button>` : ""}${showAdmin ? `<button id="logBtn" class="btn btn-outline-light">📜 בקרת יומן (LOG)</button>` : ""}</div>` : ""}
           </div>
         </div>
       </div>
