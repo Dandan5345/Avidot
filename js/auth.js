@@ -331,6 +331,7 @@ export function renderLogin(container) {
         const ok = await verifyPassword(candidate.passwordSalt, candidate.passwordHash, password);
         if (!ok) throw { code: "firestore/wrong-credential" };
         localStorage.setItem(FIRESTORE_SESSION_KEY, candidate.id);
+        hasNotifiedSignedOut = false;
         applyFirestoreUserState(candidate, candidate.id);
         await notifySignedIn();
         return;
