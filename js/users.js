@@ -116,7 +116,7 @@ export function renderUsers(container) {
     </div>
 
     <div class="table-wrap">
-      <table class="data">
+      <table class="data responsive-table">
         <thead>
           <tr>
             <th data-sort="name" class="sortable">שם העובד</th><th data-sort="employeeNumber" class="sortable">מס' עובד</th><th data-sort="username" class="sortable">שם משתמש</th>

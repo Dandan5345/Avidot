@@ -47,7 +47,7 @@ function lockViewportZoom() {
     viewportMeta.setAttribute("content", "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover");
   }
 
-  let lastTouchEndTime = 0;
+  let lastTouchEnd = { time: 0, target: null };
   document.addEventListener("gesturestart", (event) => {
     event.preventDefault();
   }, { passive: false });
@@ -60,12 +60,17 @@ function lockViewportZoom() {
   document.addEventListener("touchmove", (event) => {
     if (event.touches.length > 1) event.preventDefault();
   }, { passive: false });
+  // Only suppress a genuine double-tap-to-zoom (two quick taps on the SAME
+  // element). A global time-only check would also swallow the click when a
+  // user quickly taps through form fields to a submit button — each tap is
+  // on a different element but still lands inside the 300ms window.
   document.addEventListener("touchend", (event) => {
     const now = Date.now();
-    if (now - lastTouchEndTime < DOUBLE_TAP_THRESHOLD_MS) {
+    const target = event.target;
+    if (target === lastTouchEnd.target && now - lastTouchEnd.time < DOUBLE_TAP_THRESHOLD_MS) {
       event.preventDefault();
     }
-    lastTouchEndTime = now;
+    lastTouchEnd = { time: now, target };
   }, { passive: false });
 }
 
