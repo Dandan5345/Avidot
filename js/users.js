@@ -26,8 +26,6 @@ const USERNAME_DOMAIN = "@aovdim.com";
 // מותר: אנגלית, מספרים בלבד, ועברית.
 const USERNAME_MIN_LENGTH = 5;
 const deleteUserCompletelyCall = httpsCallable(functionsClient, "deleteUserCompletely");
-const setUserPasswordCall = httpsCallable(functionsClient, "setUserPassword");
-const setUsernameCall = httpsCallable(functionsClient, "setUsername");
 
 let unsubscribe = null;
 let allUsers = [];
@@ -109,7 +107,7 @@ export function renderUsers(container) {
 
     <div class="modal-note" style="margin-bottom:14px">
       <strong>שים לב</strong>
-      <span>אפשר לשנות סיסמה ושם משתמש למשתמש קיים דרך הכפתורים שבשורת המשתמש, בלי למחוק וליצור מחדש.</span>
+      <span>שינוי סיסמה או שם משתמש נעשה דרך הכפתורים שבשורת המשתמש. המערכת יוצרת מחדש את המשתמש עם אותם פרטים בדיוק (שם, מספר עובד, תפקיד והרשאות) ורק עם השינוי המבוקש. שינוי שם משתמש דורש הזנת סיסמה מחדש (לא ניתן לשחזר סיסמה קיימת).</span>
     </div>
 
     <div class="table-wrap">
@@ -577,15 +575,62 @@ async function onDelete(u) {
   } catch (e) { toast(callableErrorMessage(e, "שגיאה במחיקת המשתמש"), "error"); }
 }
 
+// Changing an existing account's password/username by recreating it: build a new
+// Firebase Auth user that keeps the same profile (name, employee number, role,
+// admin status) plus the requested change, then delete the old account. Firebase
+// never exposes the existing password, so a username change requires typing one.
+async function recreateUserPreserving(oldUser, { newEmail, newUsername, password }) {
+  const preserved = {
+    name: oldUser.name || "",
+    employeeNumber: oldUser.employeeNumber || "",
+    role: oldUser.role || "kabat",
+    isAdmin: !!oldUser.isAdmin,
+    email: newEmail,
+    username: newUsername,
+    createdAt: oldUser.createdAt || new Date().toISOString(),
+    createdBy: oldUser.createdBy || currentUser.uid || null
+  };
+  const emailChanged = newEmail.toLowerCase() !== String(oldUser.email || "").toLowerCase();
+
+  if (emailChanged) {
+    // New email is free — create the new account first (safe), then remove the old.
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, newEmail, password);
+    try { await secondarySignOut(secondaryAuth); } catch (_) { }
+    await createDocument(COLLECTION, preserved, cred.user.uid);
+    await deleteUserCompletelyCall({ targetUid: oldUser.uid });
+    return cred.user.uid;
+  }
+
+  // Same email (password change) — must delete the old account first to free the email.
+  await deleteUserCompletelyCall({ targetUid: oldUser.uid });
+  const cred = await createUserWithEmailAndPassword(secondaryAuth, newEmail, password);
+  try { await secondarySignOut(secondaryAuth); } catch (_) { }
+  await createDocument(COLLECTION, preserved, cred.user.uid);
+  return cred.user.uid;
+}
+
+function assertCanRecreate(user) {
+  if (isSuperAdminEmail(user.email)) throw new Error("לא ניתן לשנות את מנהל העל");
+  if (user.uid === currentUser.uid) throw new Error("לא ניתן לשנות סיסמה או שם משתמש לעצמך בדרך זו");
+  if (!canManageTarget(user)) throw new Error("אין לך הרשאה לנהל משתמש זה");
+}
+
+function assertPasswordOk(password, confirmPassword) {
+  if (!password || !confirmPassword) throw new Error("יש למלא את שני שדות הסיסמה");
+  if (password !== confirmPassword) throw new Error("אימות הסיסמה לא תואם");
+  if (password.length < 6) throw new Error("הסיסמה חייבת להכיל לפחות 6 תווים");
+}
+
 function openSetPasswordModal(user) {
+  const username = user.username || usernameFromEmail(user.email);
   const modal = openModal({
-    title: `שינוי סיסמה: ${user.name || usernameFromEmail(user.email)}`,
+    title: `שינוי סיסמה: ${user.name || username}`,
     large: true,
     bodyHtml: `
       <form class="user-form">
         <div class="modal-note">
           <strong>שינוי סיסמה למשתמש</strong>
-          <span>הסיסמה החדשה תעודכן ישירות ב-Firebase Authentication בלי שליחת מייל למשתמש.</span>
+          <span>המשתמש ייווצר מחדש עם אותם פרטים בדיוק (שם, מספר עובד, תפקיד, הרשאות ושם משתמש) — רק הסיסמה תשתנה.</span>
         </div>
         <div class="form-grid compact-grid">
           ${passwordFieldHtml({ id: "set_pwd", label: "סיסמה חדשה", required: true, note: PASSWORD_RULE_TEXT })}
@@ -603,19 +648,23 @@ function openSetPasswordModal(user) {
           button.disabled = true;
           button.innerHTML = `<span class="spinner"></span> שומר...`;
           try {
+            assertCanRecreate(user);
             const password = body.querySelector("#set_pwd").value;
             const confirmPassword = body.querySelector("#set_pwd_confirm").value;
-            if (!password || !confirmPassword) throw new Error("יש למלא את שני שדות הסיסמה");
-            if (password !== confirmPassword) throw new Error("אימות הסיסמה לא תואם");
-            await setUserPasswordCall({ targetUid: user.uid, newPassword: password });
+            assertPasswordOk(password, confirmPassword);
+            await recreateUserPreserving(user, {
+              newEmail: user.email,
+              newUsername: username,
+              password
+            });
             await logActivity({
               action: "user.set_password",
               entityType: "user",
               entityId: user.uid,
               summary: `${actorLabel()} שינה סיסמה עבור ${user.name || user.email}`,
-              detailLines: [`אימייל: ${user.email || "לא ידוע"}`]
+              detailLines: [`שם משתמש: ${username}`]
             });
-            toast("הסיסמה עודכנה בהצלחה", "success");
+            toast("הסיסמה עודכנה בהצלחה", "success", 4000);
             close();
           } catch (e) {
             toast(callableErrorMessage(e, "שגיאה בעדכון הסיסמה"), "error");
@@ -632,14 +681,14 @@ function openSetPasswordModal(user) {
 
 function openSetUsernameModal(user) {
   const currentUsername = user.username || usernameFromEmail(user.email);
-  openModal({
+  const modal = openModal({
     title: `שינוי שם משתמש: ${user.name || currentUsername}`,
     large: true,
     bodyHtml: `
       <form class="user-form">
         <div class="modal-note">
           <strong>שינוי שם המשתמש (כניסה)</strong>
-          <span>שם המשתמש משמש להתחברות. לאחר השינוי המשתמש יתחבר עם השם החדש והסיסמה הקיימת.</span>
+          <span>המשתמש ייווצר מחדש עם אותם פרטים (שם, מספר עובד, תפקיד, הרשאות). מכיוון שאי אפשר לשחזר את הסיסמה הקיימת מ-Firebase, יש להזין סיסמה חדשה עבור החשבון.</span>
         </div>
         <div class="form-grid">
           <label class="field full"><span>שם משתמש נוכחי</span>
@@ -649,6 +698,8 @@ function openSetUsernameModal(user) {
             <input type="text" id="new_username" autocomplete="off" placeholder="לדוגמה: david123 / 22000 / דוד" />
             <small class="field-note">לפחות 5 תווים — אותיות (אנגלית או עברית) או מספרים, ללא רווחים.</small>
           </label>
+          ${passwordFieldHtml({ id: "uname_pwd", label: "סיסמה לחשבון", required: true, note: PASSWORD_RULE_TEXT })}
+          ${passwordFieldHtml({ id: "uname_pwd_confirm", label: "אימות סיסמה", required: true })}
         </div>
       </form>`,
     footerButtons: [
@@ -662,17 +713,22 @@ function openSetUsernameModal(user) {
           button.disabled = true;
           button.innerHTML = `<span class="spinner"></span> שומר...`;
           try {
+            assertCanRecreate(user);
             const newUsername = body.querySelector("#new_username").value.trim();
             validateUsername(newUsername, user.uid);
-            const res = await setUsernameCall({ targetUid: user.uid, newUsername });
+            const password = body.querySelector("#uname_pwd").value;
+            const confirmPassword = body.querySelector("#uname_pwd_confirm").value;
+            assertPasswordOk(password, confirmPassword);
+            const newEmail = usernameToEmailLocal(newUsername) + USERNAME_DOMAIN;
+            await recreateUserPreserving(user, { newEmail, newUsername, password });
             await logActivity({
               action: "user.set_username",
               entityType: "user",
               entityId: user.uid,
               summary: `${actorLabel()} שינה שם משתמש עבור ${user.name || user.email}`,
-              detailLines: [`שם משתמש חדש: ${res?.data?.username || newUsername}`]
+              detailLines: [`שם משתמש חדש: ${newUsername}`]
             });
-            toast("שם המשתמש עודכן בהצלחה", "success");
+            toast("שם המשתמש עודכן בהצלחה", "success", 4000);
             close();
           } catch (e) {
             toast(callableErrorMessage(e, "שגיאה בעדכון שם המשתמש"), "error");
@@ -683,6 +739,8 @@ function openSetUsernameModal(user) {
       }
     ]
   });
+
+  wirePasswordToggles(modal.body);
 }
 
 // Helper: ensures the super admin has a /users record (auto-created at login).
