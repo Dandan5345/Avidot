@@ -1,5 +1,12 @@
 // Home page with category buttons.
 import { isAdmin, isAhmash, currentUser } from "./auth.js";
+import { openModal } from "./utils.js";
+
+const ADD_ITEM_TARGETS = {
+  lost: { route: "lost-items", requestKey: "openAddLostItems" },
+  pending: { route: "pending-pickup", requestKey: "openAddPendingPickup" },
+  awaiting: { route: "awaiting-info", requestKey: "openAddAwaitingInfo" }
+};
 
 export function renderHome(container) {
   const showAdmin = isAdmin();
@@ -13,7 +20,11 @@ export function renderHome(container) {
           <div class="hero-content">
             <h2>ברוכים הבאים, ${escapeName(currentUser.name)}</h2>
             <p>מערכת ניהול אבידות ומציאות – ביטחון מלון ממילא</p>
-            ${showUsers || showAdmin ? `<div class="hero-actions">${showUsers ? `<button id="usersBtn" class="btn btn-outline-light">👥 ניהול משתמשים</button>` : ""}${showAdmin ? `<button id="logBtn" class="btn btn-outline-light">📜 בקרת יומן (LOG)</button>` : ""}</div>` : ""}
+            <div class="hero-actions">
+              <button id="quickAddItemBtn" class="btn btn-outline-light">➕ הוסף אבידה</button>
+              ${showUsers ? `<button id="usersBtn" class="btn btn-outline-light">👥 ניהול משתמשים</button>` : ""}
+              ${showAdmin ? `<button id="logBtn" class="btn btn-outline-light">📜 בקרת יומן (LOG)</button>` : ""}
+            </div>
           </div>
         </div>
       </div>
@@ -60,10 +71,46 @@ export function renderHome(container) {
   if (usersBtn) usersBtn.addEventListener("click", () => { location.hash = "#/users"; });
   const logBtn = container.querySelector("#logBtn");
   if (logBtn) logBtn.addEventListener("click", () => { location.hash = "#/activity-log"; });
+  const quickAddItemBtn = container.querySelector("#quickAddItemBtn");
+  if (quickAddItemBtn) quickAddItemBtn.addEventListener("click", openQuickAddItemModal);
 }
 
 function escapeName(s) {
   return String(s || "").replace(/[<>&"']/g, (c) => ({
     "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;"
   })[c]);
+}
+
+function openQuickAddItemModal() {
+  const modal = openModal({
+    title: "הוספת אבידה",
+    bodyHtml: `
+      <div class="upload-source-actions">
+        <button type="button" class="upload-choice" data-add-target="lost">
+          <strong>אבידה רגילה</strong>
+          <small>פתיחת טופס ההוספה הרגיל בדף אבידות.</small>
+        </button>
+        <button type="button" class="upload-choice" data-add-target="pending">
+          <strong>אבידה שממתינה לאיסוף</strong>
+          <small>פתיחת טופס ההוספה של ממתינות לאיסוף.</small>
+        </button>
+        <button type="button" class="upload-choice" data-add-target="awaiting">
+          <strong>אבידה שמחכה למידע</strong>
+          <small>פתיחת טופס ההוספה של ממתינות למידע.</small>
+        </button>
+      </div>`,
+    footerButtons: [
+      { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() }
+    ]
+  });
+
+  modal.body.querySelectorAll("[data-add-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = ADD_ITEM_TARGETS[button.dataset.addTarget];
+      if (!target) return;
+      sessionStorage.setItem(target.requestKey, "1");
+      modal.close();
+      location.hash = `#/${target.route}`;
+    });
+  });
 }

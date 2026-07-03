@@ -15,6 +15,7 @@ import { collectionLabel, logActivitySafe } from "./activityLog.js";
 import { syncLostItemsFullSnapshotSafe } from "./googleSheetsBackup.js";
 
 const COLLECTION = "lostItems";
+const OPEN_ADD_REQUEST_KEY = "openAddLostItems";
 const STORAGE_OPTIONS = [
   "ארון אבידות",
   "כספת ארון אבידות",
@@ -33,6 +34,9 @@ let hasRequestedSheetsFullSync = false;
 
 export function renderLostItems(container) {
   hasRequestedSheetsFullSync = false;
+  let shouldOpenAddFromHome = sessionStorage.getItem(OPEN_ADD_REQUEST_KEY) === "1";
+  if (shouldOpenAddFromHome) sessionStorage.removeItem(OPEN_ADD_REQUEST_KEY);
+
   container.innerHTML = `
     <div class="page-title">
       <h2>🎒 אבידות</h2>
@@ -119,13 +123,17 @@ export function renderLostItems(container) {
       void syncLostItemsFullSnapshotSafe(items);
     }
     render();
+    maybeOpenRequestedAddModal();
   }, (error) => {
     clearTimeout(initialLoadTimer);
     loadError = error?.message || "שגיאה בטעינת הנתונים";
     render();
   });
 
-  if (hasLoadedSnapshot) render();
+  if (hasLoadedSnapshot) {
+    render();
+    maybeOpenRequestedAddModal();
+  }
 
   function render() {
     if (loadError && !hasLoadedSnapshot) {
@@ -185,8 +193,15 @@ export function renderLostItems(container) {
     sessionStorage.removeItem("transferToLostItems");
     try {
       const data = JSON.parse(pending);
+      shouldOpenAddFromHome = false;
       setTimeout(() => openAddModal({ prefill: data }), 100);
     } catch (_) { }
+  }
+
+  function maybeOpenRequestedAddModal() {
+    if (!shouldOpenAddFromHome || !hasLoadedSnapshot) return;
+    shouldOpenAddFromHome = false;
+    setTimeout(() => openAddModal(), 0);
   }
 }
 

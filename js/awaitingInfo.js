@@ -12,6 +12,7 @@ import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
 import { collectionLabel, logActivitySafe } from "./activityLog.js";
 
 const COLLECTION = "awaitingInfo";
+const OPEN_ADD_REQUEST_KEY = "openAddAwaitingInfo";
 let unsubscribe = null;
 let allItems = [];
 let hasLoadedSnapshot = false;
@@ -20,6 +21,9 @@ let initialLoadTimer = null;
 let viewState = { search: "", date: "" };
 
 export function renderAwaitingInfo(container) {
+  let shouldOpenAddFromHome = sessionStorage.getItem(OPEN_ADD_REQUEST_KEY) === "1";
+  if (shouldOpenAddFromHome) sessionStorage.removeItem(OPEN_ADD_REQUEST_KEY);
+
   container.innerHTML = `
     <div class="page-title">
       <h2>⏳ אבידות שמחכות למידע</h2>
@@ -78,13 +82,17 @@ export function renderAwaitingInfo(container) {
     hasLoadedSnapshot = true;
     loadError = "";
     render();
+    maybeOpenRequestedAddModal();
   }, (error) => {
     clearTimeout(initialLoadTimer);
     loadError = error?.message || "שגיאה בטעינת הנתונים";
     render();
   });
 
-  if (hasLoadedSnapshot) render();
+  if (hasLoadedSnapshot) {
+    render();
+    maybeOpenRequestedAddModal();
+  }
 
   function render() {
     if (loadError && !hasLoadedSnapshot) {
@@ -132,6 +140,12 @@ export function renderAwaitingInfo(container) {
         if (it) openItemDetailsModal({ item: it, title: "פרטי אבידה ממתינה למידע" });
       });
     });
+  }
+
+  function maybeOpenRequestedAddModal() {
+    if (!shouldOpenAddFromHome || !hasLoadedSnapshot) return;
+    shouldOpenAddFromHome = false;
+    setTimeout(() => openAddModal(), 0);
   }
 }
 
