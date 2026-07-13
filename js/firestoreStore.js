@@ -93,6 +93,45 @@ export async function nextCounterValue(counterName) {
     });
 }
 
+// Atomically advances a counter, while first bringing it up to at least the
+// largest number already present in the item collections. This lets old data
+// move to the new shared sequence without reusing an existing number.
+export async function nextCounterValueAtLeast(counterName, minimumCurrentValue = 0) {
+    const counterRef = doc(db, "counters", counterName);
+    return runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(counterRef);
+        const storedValue = snapshot.exists() ? Number(snapshot.data().value) || 0 : 0;
+        const nextValue = Math.max(storedValue, Number(minimumCurrentValue) || 0) + 1;
+        transaction.set(counterRef, { value: nextValue }, { merge: true });
+        return nextValue;
+    });
+}
+
+export async function archiveAndDeleteDocument(collectionName, id, archiveData) {
+    const archiveId = `${collectionName}__${id}`;
+    const batch = writeBatch(db);
+    batch.set(doc(db, "closedItems", archiveId), archiveData);
+    batch.delete(doc(db, collectionName, id));
+    await batch.commit();
+    return archiveId;
+}
+
+export async function archiveAndDeleteDocumentsBatch(collectionName, entries) {
+    const normalized = (entries || []).filter((entry) => entry?.id && entry?.archiveData);
+    if (!normalized.length) return;
+
+    // Each item consumes two Firestore writes. Keep safely below the 500-write
+    // batch limit and commit sequentially so callers get an accurate failure.
+    for (let index = 0; index < normalized.length; index += 225) {
+        const batch = writeBatch(db);
+        normalized.slice(index, index + 225).forEach(({ id, archiveData }) => {
+            batch.set(doc(db, "closedItems", `${collectionName}__${id}`), archiveData);
+            batch.delete(doc(db, collectionName, id));
+        });
+        await batch.commit();
+    }
+}
+
 export async function setCounterValue(counterName, value) {
     await setDoc(doc(db, "counters", counterName), { value: value || 0 }, { merge: true });
 }

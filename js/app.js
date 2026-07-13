@@ -7,6 +7,7 @@ import { renderHome } from "./home.js";
 import { renderLostItems, teardownLostItems } from "./lostItems.js";
 import { renderPendingPickup, teardownPendingPickup } from "./pendingPickup.js";
 import { renderAwaitingInfo, teardownAwaitingInfo } from "./awaitingInfo.js";
+import { renderClosedItems, teardownClosedItems } from "./closedItems.js";
 import { renderManagerActions } from "./managerActions.js";
 import { renderUsers, teardownUsers, ensureSuperAdminProfile } from "./users.js";
 import { renderActivityLogsPage, teardownActivityLogsPage } from "./activityLogsPage.js";
@@ -134,6 +135,10 @@ function navigate() {
       renderAwaitingInfo(appEl);
       currentTeardown = teardownAwaitingInfo;
       break;
+    case "/closed-items":
+      renderClosedItems(appEl);
+      currentTeardown = teardownClosedItems;
+      break;
     case "/manager-actions":
       renderManagerActions(appEl);
       currentTeardown = null;
@@ -199,6 +204,8 @@ function routeLabel(route) {
       return "ממתינות לאיסוף";
     case "/awaiting-info":
       return "ממתינות למידע";
+    case "/closed-items":
+      return "אבידות שהוחזרו / נמחקו";
     case "/manager-actions":
       return 'פעולות אחמ"ש';
     case "/users":

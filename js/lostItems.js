@@ -1,6 +1,6 @@
 // Page 1: רגיל — אבידות
 import {
-  fetchAllItems, createItem, updateItem, deleteItem,
+  createItem, closeItem, deleteItem, nextItemNumber,
   findItemsByNumber, openItemDetailsModal, openReturnDetailsModal
 } from "./itemsCommon.js";
 import { subscribeCollection } from "./firestoreStore.js";
@@ -224,6 +224,13 @@ async function onDeleteItem(item) {
   });
   if (!ok1) return;
 
+  const deletionReason = await promptDialog({
+    title: "סיבת המחיקה",
+    label: "פירוט סיבת המחיקה (אפשר להשאיר ריק)",
+    placeholder: "לדוגמה: רשומה כפולה"
+  });
+  if (deletionReason === null) return;
+
   const ok2 = await promptDialog({
     title: "אישור סופי",
     label: 'הקלד "מחק" כדי לאשר את המחיקה',
@@ -235,7 +242,12 @@ async function onDeleteItem(item) {
   }
 
   try {
-    await deleteItem(COLLECTION, item.id);
+    await closeItem(COLLECTION, item, {
+      status: "deleted",
+      reason: deletionReason,
+      closedBy: currentUser.uid || null,
+      closedByName: actorLabel()
+    });
     void logActivitySafe({
       action: "item.delete.lost",
       entityType: "item",
@@ -244,7 +256,8 @@ async function onDeleteItem(item) {
       summary: `${actorLabel()} מחק את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
       detailLines: [
         `תיאור: ${item.description || "ללא תיאור"}`,
-        `מקום מציאה: ${item.foundLocation || "לא צוין"}`
+        `מקום מציאה: ${item.foundLocation || "לא צוין"}`,
+        `סיבת המחיקה: ${deletionReason || "לא צוינה"}`
       ],
       metadata: { sourceCollection: COLLECTION }
     });
@@ -256,9 +269,7 @@ async function onDeleteItem(item) {
 
 // ===== Add modal =====
 async function openAddModal({ prefill = null } = {}) {
-  // Determine next number from existing data — robust even if counter was reset.
-  const existingMax = allItems.reduce((m, it) => Math.max(m, Number(it.number) || 0), 0);
-  const suggestedNumber = existingMax + 1;
+  const transferredNumber = Number(prefill?.number) > 0 ? Number(prefill.number) : null;
 
   const storageOpts = STORAGE_OPTIONS.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join("");
 
@@ -275,8 +286,8 @@ async function openAddModal({ prefill = null } = {}) {
           <div class="field-row">
             <label class="field">
               <span>מספר אבידה</span>
-              <input type="number" id="f_number" value="${escapeHtml(String(prefill && prefill.number ? prefill.number : suggestedNumber))}" required />
-              <small class="field-note">מזהה פנימי.</small>
+              <input type="text" value="${transferredNumber || "יוקצה אוטומטית בשמירה"}" readonly />
+              <small class="field-note">הרצף משותף לאבידות ולממתינות לאיסוף.</small>
             </label>
             <label class="field">
               <span>תאריך ושעה</span>
@@ -367,8 +378,6 @@ async function openAddModal({ prefill = null } = {}) {
     saveBtn.disabled = true;
     saveBtn.innerHTML = `<span class="spinner"></span> שומר...`;
     try {
-      const number = Number(body.querySelector("#f_number").value);
-      if (!Number.isFinite(number) || number <= 0) throw new Error("מספר אבידה לא תקין");
       const dateTimeRaw = body.querySelector("#f_dateTime").value;
       if (!dateTimeRaw) throw new Error("יש למלא תאריך ושעה");
       const dateTime = toIsoFromLocalInput(dateTimeRaw) || new Date().toISOString();
@@ -400,6 +409,8 @@ async function openAddModal({ prefill = null } = {}) {
         saveBtn.textContent = "שמור";
         return;
       }
+
+      const number = transferredNumber || await nextItemNumber(COLLECTION);
 
       const payload = {
         number, dateTime, description, valuable, foundLocation,
@@ -596,15 +607,19 @@ function openReturnFormModal(item) {
             }
             const signatureBlob = await signatureController.toBlob();
             const signatureUrl = await uploadImageToImgBB(signatureBlob);
-            await updateItem(COLLECTION, item.id, {
-              returned: true,
-              returnDetails: {
-                receiverName, receiverContact, handlerName,
-                returnedAt: new Date().toISOString(),
-                returnedBy: currentUser.uid || null,
-                signatureUrl
-              }
-            }, { existingItem: item });
+            const returnDetails = {
+              receiverName, receiverContact, handlerName,
+              returnedAt: new Date().toISOString(),
+              returnedBy: currentUser.uid || null,
+              signatureUrl
+            };
+            await closeItem(COLLECTION, item, {
+              status: "returned",
+              returnDetails,
+              closedAt: returnDetails.returnedAt,
+              closedBy: currentUser.uid || null,
+              closedByName: actorLabel()
+            });
             void logActivitySafe({
               action: "item.return.lost",
               entityType: "item",

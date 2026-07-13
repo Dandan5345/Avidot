@@ -2,13 +2,15 @@
 // and the standard "item details" modal.
 
 import {
+  archiveAndDeleteDocument,
+  archiveAndDeleteDocumentsBatch,
   createDocument,
   deleteDocumentsBatch,
   deleteDocument,
   fetchCollection,
   findDocumentsByField,
   getDocument,
-  nextCounterValue,
+  nextCounterValueAtLeast,
   setCounterValue,
   updateDocument
 } from "./firestoreStore.js";
@@ -43,7 +45,14 @@ async function fetchDocumentsByIdsInChunks(collectionName, ids, chunkSize = 25) 
  * possible) but we still increment based on the current max and counter.
  */
 export async function nextItemNumber(collectionName) {
-  return nextCounterValue(collectionName);
+  const [lostItems, pendingItems, closedItems] = await Promise.all([
+    fetchCollection("lostItems"),
+    fetchCollection("pendingPickup"),
+    fetchCollection("closedItems")
+  ]);
+  const largestExisting = lostItems.concat(pendingItems, closedItems)
+    .reduce((max, item) => Math.max(max, normalizeItemNumber(item.number) || 0), 0);
+  return nextCounterValueAtLeast("itemNumber", largestExisting);
 }
 
 /**
@@ -106,6 +115,57 @@ export async function deleteItemsBatch(collectionName, itemsOrIds) {
   }
 }
 
+function archiveSnapshot(collectionName, item, {
+  status,
+  reason = "",
+  returnDetails = null,
+  closedBy = null,
+  closedByName = "",
+  closedAt = new Date().toISOString()
+}) {
+  const { id, ...itemData } = item;
+  return {
+    ...itemData,
+    sourceId: id,
+    sourceCollection: collectionName,
+    terminalStatus: status,
+    deletionReason: status === "deleted" ? String(reason || "").trim() : "",
+    returned: status === "returned",
+    returnDetails: returnDetails || item.returnDetails || null,
+    closedAt,
+    closedBy,
+    closedByName
+  };
+}
+
+export async function closeItem(collectionName, item, options) {
+  if (!item?.id) throw new Error("רשומת האבידה אינה תקינה");
+  const archiveData = archiveSnapshot(collectionName, item, options);
+  const archiveId = await archiveAndDeleteDocument(collectionName, item.id, archiveData);
+  if (collectionName === "lostItems") {
+    if (options.status === "returned") {
+      await syncLostItemUpsertSafe({ id: item.id, ...archiveData });
+    } else {
+      await syncLostItemDeleteSafe({ ...item, deletionReason: archiveData.deletionReason });
+    }
+  }
+  return archiveId;
+}
+
+export async function closeItemsBatch(collectionName, items, options) {
+  const entries = (items || []).filter((item) => item?.id).map((item) => ({
+    id: item.id,
+    archiveData: archiveSnapshot(collectionName, item, options)
+  }));
+  await archiveAndDeleteDocumentsBatch(collectionName, entries);
+  if (collectionName === "lostItems" && items?.length) {
+    await syncLostItemsDeleteBatchSafe(items.map((item) => ({
+      ...item,
+      deletionReason: String(options?.reason || "").trim()
+    })));
+  }
+}
+
 export async function findItemsByNumber(collectionName, number) {
   const normalizedTarget = normalizeItemNumber(number);
   if (normalizedTarget === null) return [];
@@ -128,7 +188,7 @@ function normalizeItemNumber(value) {
 // ===== Item details modal =====
 export function openItemDetailsModal({ title, item, extraRows = [], footerButtons = [] }) {
   const baseRows = [
-    { label: "מספר אבידה", value: item.number },
+    { label: "מספר אבידה", value: item.number || "טרם הוקצה" },
     { label: "תאריך ושעה", value: formatDateTime(item.dateTime) },
     { label: "תיאור הפריט", value: item.description },
     { label: "יקרת ערך", value: item.valuable ? "כן" : "לא" },
@@ -143,9 +203,11 @@ export function openItemDetailsModal({ title, item, extraRows = [], footerButton
     { label: "טלפון בעלים", value: item.ownerPhone },
     { label: "תעודת זהות", value: item.ownerId },
     {
-      label: "סטטוס", value: item.returned
-        ? `<span class="badge green">הוחזרה</span>`
-        : `<span class="badge amber">פעילה</span>`,
+      label: "סטטוס", value: item.terminalStatus === "deleted"
+        ? `<span class="badge red">נמחקה</span>`
+        : item.returned
+          ? `<span class="badge green">הוחזרה</span>`
+          : `<span class="badge amber">פעילה</span>`,
       html: true
     }
   ];

@@ -1,8 +1,8 @@
 // Page 4: פעולות אחמ"ש — משיכת / מחיקת אבידות
 // Operates on lostItems for donation lists or permanent deletion.
-import { deleteItemsBatch, fetchAllItems } from "./itemsCommon.js";
+import { closeItemsBatch, fetchAllItems } from "./itemsCommon.js";
 import { isAhmash } from "./auth.js";
-import { escapeHtml, formatDateTime, formatDate, toast, confirmDialog } from "./utils.js";
+import { escapeHtml, formatDateTime, formatDate, toast, confirmDialog, promptDialog } from "./utils.js";
 import { currentUser } from "./auth.js";
 import { logActivitySafe } from "./activityLog.js";
 
@@ -249,6 +249,12 @@ function renderDeleteView(container, items, opts) {
       danger: true
     });
     if (!ok1) return;
+    const deletionReason = await promptDialog({
+      title: "סיבת המחיקה",
+      label: `פירוט משותף למחיקת ${items.length} האבידות (אפשר להשאיר ריק)`,
+      placeholder: "לדוגמה: עבר מועד השמירה"
+    });
+    if (deletionReason === null) return;
     const ok2 = await confirmDialog({
       title: "אישור סופי",
       message: "פעולה זו אינה הפיכה. למחוק את האבידות מהדאטה בייס?",
@@ -261,12 +267,17 @@ function renderDeleteView(container, items, opts) {
     const btn = area.querySelector("#confirmDeleteBtn");
     btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> מוחק...`;
     let failed = 0;
-    const chunks = chunkItems(items, 450);
+    const chunks = chunkItems(items, 225);
     const deletedItems = [];
 
     for (const chunk of chunks) {
       try {
-        await deleteItemsBatch(COLLECTION, chunk);
+        await closeItemsBatch(COLLECTION, chunk, {
+          status: "deleted",
+          reason: deletionReason,
+          closedBy: currentUser.uid || null,
+          closedByName: actorLabel()
+        });
         deletedItems.push(...chunk);
       } catch (error) {
         failed += chunk.length;
@@ -283,7 +294,8 @@ function renderDeleteView(container, items, opts) {
         summary: `${actorLabel()} מחק את אבידה מספר ${it.number} דרך פעולת אחמ"ש`,
         detailLines: [
           `תיאור: ${it.description || "ללא תיאור"}`,
-          `תאריך: ${formatDateTime(it.dateTime)}`
+          `תאריך: ${formatDateTime(it.dateTime)}`,
+          `סיבת המחיקה: ${deletionReason || "לא צוינה"}`
         ]
       });
     });

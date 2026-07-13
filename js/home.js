@@ -49,6 +49,12 @@ export function renderHome(container) {
             <h3>שמחכות למידע</h3>
             <p>אבידות הממתינות להשלמת פרטים</p>
           </div>
+          <div class="home-card modern-card" data-route="closed-items">
+            <span class="home-card-tag">היסטוריה</span>
+            <div class="icon-wrap"><div class="icon">🗄️</div></div>
+            <h3>הוחזרו / נמחקו</h3>
+            <p>היסטוריית אבידות מכל העמודים</p>
+          </div>
           ${showAhmash ? `
             <div class="home-card modern-card ahmash-card" data-route="manager-actions">
               <span class="home-card-tag">ניהול אחמ"ש</span>

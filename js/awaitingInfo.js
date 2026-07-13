@@ -1,6 +1,6 @@
 // Page 3: אבידות שמחכות למידע
 import {
-  createItem, updateItem, openItemDetailsModal, deleteItem
+  createItem, openItemDetailsModal, closeItem
 } from "./itemsCommon.js";
 import { subscribeCollection } from "./firestoreStore.js";
 import { currentUser } from "./auth.js";
@@ -45,10 +45,10 @@ export function renderAwaitingInfo(container) {
     <div class="table-wrap">
       <table class="data responsive-table">
         <thead><tr>
-          <th>מס׳</th><th>תאריך</th><th>תיאור</th><th>איפה נמצא</th>
+          <th>תאריך</th><th>תיאור</th><th>איפה נמצא</th>
           <th>איש קשר</th><th>טלפון</th><th>מיקום נוכחי</th><th>קב״ט מטפל</th><th>פעולות</th>
         </tr></thead>
-        <tbody id="tbody"><tr><td colspan="9" class="empty">טוען...</td></tr></tbody>
+        <tbody id="tbody"><tr><td colspan="8" class="empty">טוען...</td></tr></tbody>
       </table>
     </div>
   `;
@@ -96,21 +96,20 @@ export function renderAwaitingInfo(container) {
 
   function render() {
     if (loadError && !hasLoadedSnapshot) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty">${escapeHtml(loadError)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">${escapeHtml(loadError)}</td></tr>`;
       countLabel.textContent = "";
       return;
     }
 
     let items = filterItems(allItems, { search: viewState.search, dateFilter: viewState.date });
-    items.sort((a, b) => (Number(b.number) || 0) - (Number(a.number) || 0));
+    items.sort((a, b) => new Date(b.dateTime || 0) - new Date(a.dateTime || 0));
     countLabel.textContent = `${items.length} פריטים`;
     if (!items.length) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty">אין רשומות להצגה</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">אין רשומות להצגה</td></tr>`;
       return;
     }
     tbody.innerHTML = items.map((it) => `
       <tr data-id="${escapeHtml(it.id)}">
-        <td data-label="מס׳">${escapeHtml(it.number)}</td>
         <td data-label="תאריך">${escapeHtml(formatDateTime(it.dateTime))}</td>
         <td data-label="תיאור">${escapeHtml(it.description || "")} ${it.valuable ? '<span class="badge purple">יקרת ערך</span>' : ""}</td>
         <td data-label="איפה נמצא">${escapeHtml(it.foundLocation || "")}</td>
@@ -161,12 +160,19 @@ async function onDeleteItem(item) {
   if (!item) return;
   const ok1 = await confirmDialog({
     title: "מחיקת אבידה",
-    message: `למחוק לצמיתות את אבידה מספר ${item.number}?`,
+    message: "למחוק לצמיתות את הרשומה שממתינה למידע?",
     confirmText: "המשך",
     cancelText: "ביטול",
     danger: true
   });
   if (!ok1) return;
+
+  const deletionReason = await promptDialog({
+    title: "סיבת המחיקה",
+    label: "פירוט סיבת המחיקה (אפשר להשאיר ריק)",
+    placeholder: "לדוגמה: אין מדובר באבידה"
+  });
+  if (deletionReason === null) return;
 
   const ok2 = await promptDialog({
     title: "אישור סופי",
@@ -179,16 +185,21 @@ async function onDeleteItem(item) {
   }
 
   try {
-    await deleteItem(COLLECTION, item.id);
+    await closeItem(COLLECTION, item, {
+      status: "deleted",
+      reason: deletionReason,
+      closedBy: currentUser.uid || null,
+      closedByName: actorLabel()
+    });
     void logActivitySafe({
       action: "item.delete.awaiting_info",
       entityType: "item",
       entityId: item.id,
-      itemNumber: item.number,
-      summary: `${actorLabel()} מחק את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
+      summary: `${actorLabel()} מחק רשומה מדף ${collectionLabel(COLLECTION)}`,
       detailLines: [
         `תיאור: ${item.description || "ללא תיאור"}`,
-        `מקום מציאה: ${item.foundLocation || "לא צוין"}`
+        `מקום מציאה: ${item.foundLocation || "לא צוין"}`,
+        `סיבת המחיקה: ${deletionReason || "לא צוינה"}`
       ],
       metadata: { sourceCollection: COLLECTION }
     });
@@ -199,9 +210,6 @@ async function onDeleteItem(item) {
 }
 
 async function openAddModal() {
-  const existingMax = allItems.reduce((m, it) => Math.max(m, Number(it.number) || 0), 0);
-  const suggestedNumber = existingMax + 1;
-
   const m = openModal({
     title: "הוסף אבידה (ממתינה למידע)",
     large: true,
@@ -212,9 +220,6 @@ async function openAddModal() {
           <span>רושמים כאן רק פריטים שעדיין חסר עליהם מידע או החלטה. המטרה היא לא להשאיר אותם בסטטוס הזה יותר מיומיים.</span>
         </div>
         <div class="form-grid">
-          <label class="field"><span>מספר אבידה</span>
-            <input type="number" id="f_number" value="${suggestedNumber}" required />
-            <small class="field-note">מספר זיהוי פנימי לאבידה במערכת.</small></label>
           <label class="field"><span>תאריך ושעה</span>
             <input type="datetime-local" id="f_dateTime" value="${nowAsLocalInputValue()}" required />
             <small class="field-note">מתי האבידה נמצאה או מתי הוחלט להעביר אותה להמתנה למידע.</small></label>
@@ -266,8 +271,6 @@ async function openAddModal() {
     const btn = document.getElementById("saveBtn3");
     btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> שומר...`;
     try {
-      const number = Number(body.querySelector("#f_number").value);
-      if (!Number.isFinite(number) || number <= 0) throw new Error("מספר לא תקין");
       const description = body.querySelector("#f_description").value.trim();
       if (!description) throw new Error("יש להזין פירוט");
 
@@ -281,7 +284,6 @@ async function openAddModal() {
       }
 
       const payload = {
-        number,
         dateTime: toIsoFromLocalInput(body.querySelector("#f_dateTime").value) || new Date().toISOString(),
         description,
         valuable: body.querySelector("#f_valuable").checked,
@@ -302,10 +304,8 @@ async function openAddModal() {
       void logActivitySafe({
         action: "item.create.awaiting_info",
         entityType: "item",
-        itemNumber: number,
         summary: `${actorLabel()} יצר אבידה חדשה בדף ${collectionLabel(COLLECTION)}`,
         detailLines: [
-          `מספר אבידה: ${number}`,
           `תיאור: ${description}`,
           `מיקום נוכחי: ${payload.currentLocation || "לא צוין"}`,
           `איש קשר: ${payload.ownerName || "לא צוין"}`,
@@ -325,7 +325,6 @@ async function openAddModal() {
 // ===== Transfer flow =====
 function openTransferModal(item) {
   const summary = detailRows([
-    { label: "מספר", value: item.number },
     { label: "תאריך", value: formatDateTime(item.dateTime) },
     { label: "תיאור", value: item.description },
     { label: "איפה נמצא", value: item.foundLocation },
@@ -351,7 +350,6 @@ function openTransferModal(item) {
 
   m.body.querySelector("#toLost").addEventListener("click", () => {
     const data = {
-      number: item.number,
       dateTime: item.dateTime,
       description: item.description,
       valuable: !!item.valuable,
@@ -371,7 +369,6 @@ function openTransferModal(item) {
   });
   m.body.querySelector("#toPending").addEventListener("click", () => {
     const data = {
-      number: item.number,
       dateTime: item.dateTime,
       description: item.description,
       valuable: !!item.valuable,
