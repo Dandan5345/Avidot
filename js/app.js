@@ -90,6 +90,14 @@ function lockViewportZoom() {
   document.addEventListener("touchend", (event) => {
     const now = Date.now();
     const target = event.target;
+    // The signature canvas and form controls handle their own touches. Calling
+    // preventDefault() on a second quick tap there swallowed the stroke that
+    // starts a new signature line, and blocked focusing a field the user had
+    // just tapped away from.
+    if (target instanceof Element && target.closest(".signature-canvas, input, textarea, select, label")) {
+      lastTouchEnd = { time: now, target };
+      return;
+    }
     if (target === lastTouchEnd.target && now - lastTouchEnd.time < DOUBLE_TAP_THRESHOLD_MS) {
       event.preventDefault();
     }

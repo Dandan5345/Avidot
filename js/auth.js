@@ -28,6 +28,7 @@ export const currentUser = {
   uid: null,
   email: null,
   name: "",
+  username: "",
   employeeNumber: "",
   role: "kabat",         // "kabat" | "ahmash"
   isAdmin: false,
@@ -75,6 +76,25 @@ function ensureAnonymousSession() {
 }
 
 export function isAdmin() { return !!(currentUser.isAdmin || currentUser.isSuperAdmin); }
+
+// Shared control-room logins. Several guards work from the same station under
+// one of these accounts, so the account name is never the person who actually
+// handled the item. Anywhere we would normally pre-fill "the handling kabat",
+// these accounts must get an empty field so a real name is typed in.
+const SHARED_STATION_ACCOUNTS = ["מוקדב", "מוקדביטחון", "מחשב מוקד"];
+
+export function isSharedStationAccount() {
+  const candidates = [currentUser.username, currentUser.name]
+    .map((v) => String(v || "").replace(/\s+/g, "").trim());
+  return SHARED_STATION_ACCOUNTS.some(
+    (shared) => candidates.includes(shared.replace(/\s+/g, ""))
+  );
+}
+
+/** Pre-fill value for a "handling kabat" field: empty on shared stations. */
+export function defaultHandlerName() {
+  return isSharedStationAccount() ? "" : (currentUser.name || "");
+}
 export function isAhmash() { return currentUser.role === "ahmash" || isAdmin(); }
 
 function applyBaseUserState(fbUser) {
@@ -96,6 +116,7 @@ function applyFallbackProfile(fbUser) {
 function applyFirestoreUserState(profile, uid) {
   currentUser.uid = uid;
   currentUser.email = profile.email || null;
+  currentUser.username = profile.username || "";
   currentUser.name = profile.name || profile.username || "משתמש";
   currentUser.employeeNumber = profile.employeeNumber || "";
   currentUser.role = profile.role || "kabat";
@@ -182,6 +203,7 @@ async function tryRestoreFirestoreSession(uid) {
 export function clearCurrentUser() {
   currentUser.uid = null;
   currentUser.email = null;
+  currentUser.username = "";
   currentUser.name = "";
   currentUser.employeeNumber = "";
   currentUser.role = "kabat";
@@ -366,33 +388,89 @@ export function renderLogin(container) {
       if (!signedIn) throw lastErr;
     } catch (err) {
       console.error("[login] sign-in failed:", err);
-      let msg = "שגיאה בהתחברות";
-      const code = (err && err.code) || "";
-      if (code === "firestore/wrong-credential" || code === "auth/legacy-account-not-migrated" ||
-        code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found") || code.includes("invalid-login-credentials")) {
-        msg = "שם משתמש או סיסמה שגויים";
-      } else if (code.includes("too-many-requests")) {
-        msg = "יותר מדי ניסיונות התחברות. נסה שוב מאוחר יותר.";
-      } else if (code.includes("network")) {
-        msg = "שגיאת רשת — בדוק את החיבור לאינטרנט";
-      } else if (code.includes("unauthorized-domain")) {
-        msg = "הכתובת שממנה פתחת את האתר לא מאושרת ב-Firebase. פתח את האתר מהדומיין הרשמי או הוסף את הכתובת הזו ל-Authorized domains.";
-      } else if (code.includes("operation-not-allowed")) {
-        msg = "התחברות עם אימייל/סיסמה לא מופעלת ב-Firebase. יש להפעיל אותה ב-Firebase Console → Authentication → Sign-in method.";
-      } else if (code.includes("configuration-not-found")) {
-        msg = "שגיאת תצורה ב-Firebase Authentication. ודא שהאפליקציה מוגדרת נכון ושיטת ההתחברות מאופשרת.";
-      } else if (code.includes("invalid-api-key") || code.includes("api-key")) {
-        msg = "מפתח API לא תקין";
-      } else if (err && err.message) {
-        msg = `${code ? `[${code}] ` : ""}${err.message}`;
-      }
-      errEl.textContent = msg;
-      errEl.style.display = "block";
+      showLoginError(errEl, loginErrorMessage(err));
     } finally {
       btn.disabled = false;
       btn.textContent = "התחבר";
     }
   });
+}
+
+// ===== Login error messages =====
+// Every message is plain Hebrew aimed at a security guard on a night shift:
+// what went wrong, and what to do about it. Firebase's own English text and
+// error codes go to the console only — they never reach the screen.
+function loginErrorMessage(err) {
+  const code = String((err && err.code) || "");
+  const text = String((err && err.message) || "");
+  const has = (...needles) => needles.some((n) => code.includes(n) || text.includes(n));
+
+  // Wrong username / password — by far the most common case.
+  if (code === "firestore/wrong-credential" ||
+    code === "auth/legacy-account-not-migrated" ||
+    has("invalid-credential", "wrong-password", "user-not-found", "invalid-login-credentials")) {
+    return {
+      title: "שם המשתמש או הסיסמה לא נכונים",
+      hint: "בדקו שאין רווח בהתחלה או בסוף, ושהמקלדת בשפה הנכונה. אם שכחתם את הסיסמה, פנו לאחמ\"ש כדי לאפס אותה."
+    };
+  }
+
+  if (has("too-many-requests")) {
+    return {
+      title: "יותר מדי ניסיונות התחברות",
+      hint: "המערכת חסמה זמנית את הניסיונות מהמכשיר הזה. המתינו כדקה ונסו שוב."
+    };
+  }
+
+  if (has("network-request-failed", "network", "Failed to fetch", "unavailable")) {
+    return {
+      title: "אין חיבור לאינטרנט",
+      hint: "בדקו שהמכשיר מחובר לרשת של המלון ונסו שוב."
+    };
+  }
+
+  // WebCrypto is missing — the site was opened over plain http on a LAN
+  // address instead of https. Now handled by a fallback, so this only shows
+  // if something else went wrong on the way.
+  if (has("digest", "subtle", "SubtleCrypto")) {
+    return {
+      title: "לא ניתן לאמת את הסיסמה מהכתובת הזו",
+      hint: "פתחו את המערכת מהכתובת הרשמית (https) ולא מכתובת IP, ונסו שוב."
+    };
+  }
+
+  if (has("permission-denied", "insufficient")) {
+    return {
+      title: "אין הרשאה לגשת לנתונים",
+      hint: "המשתמש קיים אבל חסומה לו הגישה. פנו לאחמ\"ש או למנהל המערכת."
+    };
+  }
+
+  if (has("unauthorized-domain")) {
+    return {
+      title: "הכתובת הזו לא מאושרת לשימוש",
+      hint: "פתחו את המערכת מהכתובת הרשמית של המלון. אם זו כתובת חדשה, יש לאשר אותה בהגדרות המערכת."
+    };
+  }
+
+  if (has("operation-not-allowed", "configuration-not-found", "invalid-api-key", "api-key")) {
+    return {
+      title: "תקלה בהגדרות המערכת",
+      hint: "זו לא בעיה בסיסמה שלכם. פנו למנהל המערכת."
+    };
+  }
+
+  return {
+    title: "ההתחברות נכשלה",
+    hint: "נסו שוב בעוד רגע. אם זה חוזר, פנו לאחמ\"ש."
+  };
+}
+
+function showLoginError(errEl, { title, hint }) {
+  errEl.innerHTML = `
+    <strong class="login-error-title">${escapeHtml(title)}</strong>
+    ${hint ? `<span class="login-error-hint">${escapeHtml(hint)}</span>` : ""}`;
+  errEl.style.display = "block";
 }
 
 function cleanLoginText(value) {

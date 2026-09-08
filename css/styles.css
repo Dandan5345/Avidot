@@ -1860,8 +1860,10 @@ hr.sep {
     justify-content: center;
   }
 
+  /* Two per row beside the hero. A single tall column of full-width cards
+     wasted the width and pushed the lower categories below the fold. */
   .home-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .home-card.modern-card {
@@ -1931,45 +1933,6 @@ hr.sep {
     overflow-y: hidden;
     border-radius: 22px;
     -webkit-overflow-scrolling: touch;
-  }
-
-  table.data.responsive-table {
-    min-width: 820px;
-  }
-
-  table.data.responsive-table thead {
-    display: table-header-group;
-  }
-
-  table.data.responsive-table {
-    display: table;
-    width: 100%;
-  }
-
-  table.data.responsive-table tbody {
-    display: table-row-group;
-  }
-
-  table.data.responsive-table tr {
-    display: table-row;
-  }
-
-  table.data.responsive-table th {
-    display: table-cell;
-    white-space: nowrap;
-  }
-
-  table.data.responsive-table td {
-    display: table-cell;
-  }
-
-  table.data.responsive-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid rgba(88, 119, 168, 0.1);
-  }
-
-  table.data.responsive-table td::before {
-    content: none;
   }
 
   .actions-cell {
@@ -2141,5 +2104,298 @@ hr.sep {
   .btn,
   button {
     display: none !important;
+  }
+}
+
+/* =========================================================================
+   Fixes for the guest-return flow on a phone.
+   Deliberately narrow: no palette or layout changes, only the rules needed
+   to make signing work and to style the elements added alongside it.
+   ========================================================================= */
+
+/* THE fix for "the signing is stuck": without touch-action the browser claims
+   the touch as a page scroll and drops most of the stroke. */
+.signature-canvas {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Signing state + loading overlay (new markup in signaturePadHtml). */
+.signature-actions {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.signature-state {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.signature-state.signed {
+  color: var(--success);
+}
+
+.signature-pad-shell.has-signature {
+  border-style: solid;
+  border-color: var(--success);
+}
+
+.signature-placeholder {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.signature-placeholder-mark {
+  font-size: 26px;
+}
+
+.signature-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.signature-loading.error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* Item summary inside the return form. */
+.return-summary {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-md);
+  background: #eff6ff;
+}
+
+.return-summary-title {
+  margin-bottom: 6px;
+  color: #1e3a8a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.return-summary .detail-row:last-child {
+  border-bottom: none;
+}
+
+/* Login errors: a bold headline plus a plain-language next step. */
+.login-error {
+  display: grid;
+  gap: 4px;
+  text-align: start;
+}
+
+.login-error-title {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.login-error-hint {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+/* Modal scroll-lock (openModal in utils.js) so the list behind a sheet
+   cannot scroll under the user's finger. */
+body.modal-open {
+  position: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+
+.modal-body {
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 720px) {
+
+  /* The fixed background photo is repainted on every scroll frame on a phone,
+     which is what made scrolling feel heavy. Desktop keeps it as-is. */
+  body {
+    background-attachment: scroll;
+  }
+
+  /* Comfortable one-handed targets while standing next to a guest. */
+  .btn {
+    min-height: 46px;
+  }
+
+  .modal-footer .btn {
+    min-height: 50px;
+    font-size: 15px;
+  }
+
+  /* 16px stops iOS from zooming the page when a field is focused. */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="datetime-local"],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  /* Keep the confirm button reachable once the keyboard is open. */
+  .modal,
+  .modal.large {
+    display: flex;
+    flex-direction: column;
+    max-height: 92dvh;
+  }
+
+  .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .modal-footer {
+    flex: 0 0 auto;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* viewport-fit=cover is set in index.html, so honour the notch and home bar. */
+@supports (padding: max(0px)) {
+  .topbar {
+    padding-top: max(10px, env(safe-area-inset-top, 0px));
+  }
+
+  .app,
+  .app-footer {
+    padding-left: max(22px, env(safe-area-inset-left, 0px));
+    padding-right: max(22px, env(safe-area-inset-right, 0px));
+  }
+}
+
+/* On a phone an 8-column table can only be read by scrolling sideways, so the
+   item number and description are never visible together. Every cell already
+   carries data-label, so each row becomes a labelled card instead. Colours are
+   the existing palette — this only changes layout. */
+@media (max-width: 720px) {
+
+  .table-wrap {
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    overflow: visible;
+  }
+
+  table.data.responsive-table,
+  table.data.responsive-table tbody,
+  table.data.responsive-table tr,
+  table.data.responsive-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  table.data.responsive-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  table.data.responsive-table tr {
+    margin-bottom: 12px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: var(--radius-lg);
+    background: var(--surface-strong);
+    box-shadow: var(--shadow-sm);
+  }
+
+  table.data.responsive-table td {
+    display: grid;
+    grid-template-columns: minmax(86px, 36%) 1fr;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(88, 119, 168, 0.1);
+    text-align: start;
+    white-space: normal;
+  }
+
+  table.data.responsive-table td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  /* Lead each card with the item number. */
+  table.data.responsive-table td:first-child {
+    padding-top: 0;
+    color: #1f3b4d;
+    font-size: 18px;
+    font-weight: 900;
+  }
+
+  table.data.responsive-table td:last-child {
+    border-bottom: none;
+  }
+
+  /* Actions span the full width and stay easy to hit. */
+  table.data.responsive-table td.actions-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 12px;
+    white-space: normal;
+  }
+
+  table.data.responsive-table td.actions-cell::before {
+    display: none;
+  }
+
+  table.data.responsive-table td.actions-cell .btn {
+    flex: 1 1 130px;
+    min-height: 42px;
+    margin: 0;
+  }
+
+  /* "טוען..." / "אין רשומות" rows span the card, with no label prefix. */
+  table.data.responsive-table td[colspan] {
+    display: block;
+    padding: 8px 0;
+    text-align: center;
+  }
+
+  table.data.responsive-table td[colspan]::before {
+    display: none;
+  }
+
+  /* Keep the item summary in the return form compact so the signature pad is
+     only a short scroll away. */
+  .return-summary .detail-row {
+    grid-template-columns: minmax(72px, 34%) 1fr;
+    gap: 10px;
+    padding: 6px 0;
   }
 }

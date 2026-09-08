@@ -1,4 +1,4 @@
-const CACHE_NAME = "avidot-shell-v12";
+const CACHE_NAME = "avidot-shell-v14";
 const APP_SHELL = [
     "./",
     "./index.html",
@@ -12,14 +12,17 @@ const APP_SHELL = [
     "./js/closedItems.js",
     "./js/firebase.js",
     "./js/firestoreStore.js",
+    "./js/googleSheetsBackup.js",
     "./js/home.js",
     "./js/imgbb.js",
     "./js/itemsCommon.js",
     "./js/lostItems.js",
     "./js/managerActions.js",
     "./js/pendingPickup.js",
+    "./js/returnFlow.js",
     "./js/users.js",
     "./js/utils.js",
+    "./js/vendor/signature_pad.umd.min.js",
     "./icons/app-icon.svg"
 ];
 

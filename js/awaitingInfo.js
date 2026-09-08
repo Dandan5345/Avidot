@@ -3,7 +3,7 @@ import {
   createItem, openItemDetailsModal, closeItem
 } from "./itemsCommon.js";
 import { subscribeCollection } from "./firestoreStore.js";
-import { currentUser } from "./auth.js";
+import { currentUser, defaultHandlerName } from "./auth.js";
 import {
   escapeHtml, formatDateTime, nowAsLocalInputValue, toIsoFromLocalInput,
   openModal, toast, filterItems, detailRows, confirmDialog, promptDialog
@@ -232,7 +232,7 @@ async function openAddModal() {
             <input type="text" id="f_foundLocation" required />
             <small class="field-note">המקום שבו הפריט נמצא במקור.</small></label>
           <label class="field"><span>הקב"ט המטפל</span>
-            <input type="text" id="f_kabatHandler" value="${escapeHtml(currentUser.name || "")}" required />
+            <input type="text" id="f_kabatHandler" value="${escapeHtml(defaultHandlerName())}" required />
             <small class="field-note">מי אחראי לעקוב אחרי המידע החסר ולסגור את הטיפול.</small></label>
           <label class="field"><span>שם המוצא</span>
             <input type="text" id="f_finderName" />

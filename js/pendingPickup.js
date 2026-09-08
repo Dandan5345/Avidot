@@ -4,14 +4,14 @@ import {
   findItemsByNumber, openItemDetailsModal, openReturnDetailsModal, deleteItem
 } from "./itemsCommon.js";
 import { subscribeCollection } from "./firestoreStore.js";
-import { currentUser } from "./auth.js";
+import { currentUser, defaultHandlerName } from "./auth.js";
 import {
   escapeHtml, formatDateTime, nowAsLocalInputValue, toIsoFromLocalInput,
-  openModal, toast, filterItems, promptDialog, detailRows, confirmDialog,
-  signaturePadHtml, createSignaturePadController
+  openModal, toast, filterItems, promptDialog, confirmDialog
 } from "./utils.js";
-import { attachImageUpload, imageUploadFieldHtml, uploadImageToImgBB } from "./imgbb.js";
+import { attachImageUpload, imageUploadFieldHtml } from "./imgbb.js";
 import { collectionLabel, logActivitySafe } from "./activityLog.js";
+import { openReturnFormModal as openSharedReturnFormModal, returnSummaryRows } from "./returnFlow.js";
 
 const COLLECTION = "pendingPickup";
 const OPEN_ADD_REQUEST_KEY = "openAddPendingPickup";
@@ -267,7 +267,7 @@ async function openAddModal({ prefill = null } = {}) {
             <small class="field-note">המקום שבו הפריט נמצא במקור, כדי לשמר היסטוריה של האירוע.</small>
           </label>
           <label class="field"><span>הקב"ט המטפל</span>
-            <input type="text" id="f_kabatHandler" value="${escapeHtml(prefill && prefill.kabatHandler || currentUser.name || "")}" required />
+            <input type="text" id="f_kabatHandler" value="${escapeHtml(prefill && prefill.kabatHandler || defaultHandlerName())}" required />
             <small class="field-note">מי מנהל בפועל את התקשורת ואת מסירת האבידה.</small>
           </label>
           <label class="field"><span>שם המוצא</span>
@@ -288,7 +288,7 @@ async function openAddModal({ prefill = null } = {}) {
           </label>
           <label class="field"><span>תעודת זהות בעל האבידה</span>
             <input type="text" id="f_ownerId" value="${escapeHtml(prefill && prefill.ownerId || "")}" />
-            <small class="field-note">אופציונלי בשלב הרישום. חובה להזין תעודת זהות בזמן החזרת האבידה.</small>
+            <small class="field-note">אופציונלי. אם יוזן, הוא יופיע אוטומטית בטופס ההחזרה.</small>
           </label>
           <label class="field full"><span>איפה האבידה נמצאת כרגע</span>
             <input type="text" id="f_currentLocation" value="${escapeHtml(prefill && prefill.currentLocation || "")}" required />
@@ -419,7 +419,12 @@ function toLocalInput(iso) {
 }
 
 async function openReturnFlow() {
-  const numStr = await promptDialog({ title: "החזרת אבידה", label: "הזן מספר אבידה" });
+  const numStr = await promptDialog({
+    title: "החזרת אבידה",
+    label: "הזן מספר אבידה",
+    placeholder: "מספר אבידה",
+    inputMode: "numeric"
+  });
   if (numStr === null) return;
   const num = Number(numStr);
   if (!num) { toast("מספר אבידה לא תקין", "error"); return; }
@@ -469,99 +474,23 @@ function chooseAmongMatches(matches) {
 }
 
 function openReturnFormModal(item) {
-  const summary = detailRows([
-    { label: "מספר", value: item.number },
-    { label: "תאריך", value: formatDateTime(item.dateTime) },
-    { label: "תיאור", value: item.description },
-    { label: "בעלים", value: item.ownerName }
-  ]);
-  const m = openModal({
+  openSharedReturnFormModal({
+    collection: COLLECTION,
+    item,
+    idPrefix: "pickupReturnSignature",
     title: "פרטי איסוף",
-    bodyHtml: `
-      <div class="modal-note">
-        <strong>אישור מסירת האבידה</strong>
-        <span>מלאו את פרטי מקבל האבידה, ציינו מי מסר את הפריט, ואספו חתימה דיגיטלית לפני אישור האיסוף.</span>
-      </div>
-      <div class="section-card" style="background:#eff6ff;border-color:#bfdbfe">
-        <div class="muted" style="margin-bottom:6px;font-weight:600;color:#1e3a8a">פרטי האבידה:</div>
-        ${summary}
-      </div>
-      <div class="form-grid">
-        <label class="field full"><span>שם מלא של המקבל</span>
-          <input type="text" id="r_receiverName" value="${escapeHtml(item.ownerName || "")}" required />
-          <small class="field-note">רשמו את האדם שקיבל את האבידה בפועל, גם אם מישהו אחר תיאם את האיסוף.</small>
-        </label>
-        <label class="field full"><span>תעודת זהות של המקבל</span>
-          <input type="text" id="r_receiverContact" value="${escapeHtml(item.ownerId || "")}" required />
-          <small class="field-note">יש להזין תעודת זהות בזמן המסירה כדי לוודא מי אסף את הפריט.</small>
-        </label>
-        <label class="field full"><span>שם הקב"ט שטיפל</span>
-          <input type="text" id="r_handlerName" value="${escapeHtml(currentUser.name || "")}" required />
-          <small class="field-note">מי בדק את הפרטים ואישר את המסירה.</small>
-        </label>
-        ${signaturePadHtml({ idPrefix: "pickupReturnSignature" })}
-      </div>`,
-    footerButtons: [
-      { label: "ביטול", className: "btn-secondary", onClick: ({ close }) => close() },
-      {
-        label: "אישור איסוף", className: "btn-success", onClick: async ({ body, close }) => {
-          const receiverName = body.querySelector("#r_receiverName").value.trim();
-          const receiverContact = body.querySelector("#r_receiverContact").value.trim();
-          const handlerName = body.querySelector("#r_handlerName").value.trim();
-          if (!receiverName || !receiverContact || !handlerName) { toast("יש למלא שם מקבל, תעודת זהות ושם קב\"ט", "error"); return; }
-          try {
-            if (!signatureController || signatureController.isEmpty()) {
-              toast("יש לאסוף חתימה דיגיטלית של בעל האבידה", "error");
-              return;
-            }
-            const signatureBlob = await signatureController.toBlob();
-            const signatureUrl = await uploadImageToImgBB(signatureBlob);
-            const returnDetails = {
-              receiverName, receiverContact, handlerName,
-              returnedAt: new Date().toISOString(),
-              returnedBy: currentUser.uid || null,
-              signatureUrl
-            };
-            await closeItem(COLLECTION, item, {
-              status: "returned",
-              returnDetails,
-              closedAt: returnDetails.returnedAt,
-              closedBy: currentUser.uid || null,
-              closedByName: actorLabel()
-            });
-            void logActivitySafe({
-              action: "item.return.pending",
-              entityType: "item",
-              entityId: item.id,
-              itemNumber: item.number,
-              summary: `${actorLabel()} החזיר את אבידה מספר ${item.number} מדף ${collectionLabel(COLLECTION)}`,
-              detailLines: [
-                `המקבל: ${receiverName}`,
-                `תעודת זהות מקבל: ${receiverContact}`,
-                `קב"ט שטיפל: ${handlerName}`
-              ],
-              metadata: { sourceCollection: COLLECTION }
-            });
-            toast("האבידה סומנה כנאספה", "success");
-            signatureController?.destroy();
-            close();
-          } catch (e) { toast(e.message || "שגיאה", "error"); }
-        }
-      }
-    ]
+    confirmLabel: "אישור איסוף",
+    successMessage: "האבידה סומנה כנאספה",
+    contactLabel: "תעודת זהות של המקבל (לא חובה)",
+    contactNote: "אפשר להשאיר ריק. החתימה למטה היא האישור למסירה.",
+    contactLogLabel: "תעודת זהות מקבל",
+    contactNumeric: true,
+    contactDefault: item.ownerId || "",
+    summaryRows: returnSummaryRows(item, [{ label: "בעלים", value: item.ownerName }]),
+    logAction: "item.return.pending"
   });
-
-  let signatureController = null;
-  createSignaturePadController(m.body, { idPrefix: "pickupReturnSignature" })
-    .then((controller) => { signatureController = controller; })
-    .catch((error) => toast(error.message || "שגיאה בטעינת החתימה", "error"));
-
-  const baseClose = m.close;
-  m.close = () => {
-    signatureController?.destroy();
-    baseClose();
-  };
 }
+
 
 function actorLabel() {
   return currentUser.name || currentUser.email || "משתמש";
